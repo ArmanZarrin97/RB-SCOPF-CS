@@ -1,0 +1,97 @@
+
+
+#  BSON.@load Path*"../Result/TR_figure_result.bson" report_TR_Q
+# using LaTeXStrings
+# w_scen=getindex.(report_TR_Q."plotdata", 1)
+# b_scen=getindex.(report_TR_Q."plotdata", 2)
+# function size_more_then_zero_(x)
+#         return sum(x.>0.0)
+# end
+# opt=11
+# hig=5
+# low=6
+
+b_show=Int(round(maximum(size_more_then_zero_.(w_scen))*1.1))
+b_show=Int(2e4)
+b_num=length(b_scen[opt])
+c_vio=report_TR_Q[1,"worst_vio"]
+N_C=3
+
+# Example data
+colors=[:green,:blue,:red,:yellow]
+t = (1:b_show)*100/b_num
+N_C_ind= findmin(abs.(t.-N_C))[2]
+x_exp = b_scen[opt][1:b_show]
+x_worst = w_scen[opt][1:b_show]
+y_exp = b_scen[hig][1:b_show]
+y_worst = w_scen[hig][1:b_show]
+z_exp = b_scen[low][1:b_show]
+z_worst = w_scen[low][1:b_show]
+
+x_max_exp = maximum(x_exp)
+y_max_exp = maximum(y_exp)
+z_max_exp = maximum(z_exp)
+
+f = Figure(resolution = (900, 600),fontsize = 20)
+ax = Axis(f[1, 1:2];
+    xlabel = "Retained percent of constraitns (%)",
+    ylabel = "Voltage violation magnitude (p.u.)",
+#     title = L"Maximum Expected violation (rv) vs. Worst-Case violations(\phi_)",
+    xlabelsize = 22, ylabelsize = 22, #, titlesize = 25,
+    # xticklabelsize = 20, yticklabelsize = 20,
+    limits=(0,maximum(t)+1,0,c_vio*1.2)
+)
+
+# Plot bands and lines (keep handles)
+bx = band!(ax, t, z_worst, x_worst, color = (:green, 0.25))
+lx = lines!(ax, t, x_worst, color = :green, linewidth = 2)
+
+by = band!(ax, t, x_worst, y_worst, color = (:blue, 0.25))
+ly = lines!(ax, t, y_worst, color = :blue, linewidth = 2)
+
+bz = band!(ax, t, z_exp, z_worst, color = (:red, 0.25))
+lz = lines!(ax, t, z_worst, color = :red, linewidth = 2)
+hz = lines!(ax, [0, maximum(t)], [z_max_exp, z_max_exp], color=:red, linestyle=:dash, linewidth=2)
+hx = lines!(ax, [0, maximum(t)], [x_max_exp, x_max_exp], color=:green, linestyle=:dash, linewidth=2)
+hy = lines!(ax, [0, maximum(t)], [y_max_exp, y_max_exp], color=:blue, linestyle=:dash, linewidth=2)
+h0 = lines!(ax, [0, maximum(t)], [c_vio, c_vio], color=:orange, linestyle=:dashdotdot, linewidth=3)
+
+lines!(ax, [N_C, N_C], [0, 1.1*c_vio], color=:black, linestyle=:dot, linewidth=2)
+
+text!(ax,"rv = "*string(round(x_max_exp, digits=3)),position=(maximum(t), x_max_exp),color=colors[1],align = (:left, :center),fontsize = 25)
+text!(ax,"rv = "*string(round(y_max_exp, digits=3)),position=(maximum(t), y_max_exp),color=colors[2],align = (:left, :center),fontsize = 25)
+text!(ax,"rv = "*string(round(z_max_exp, digits=3)),position=(maximum(t), z_max_exp),color=colors[3],align = (:left, :center),fontsize = 25)
+text!(ax,"     "*string(round(c_vio, digits=3)),position=(maximum(t), c_vio),color=:orange,align = (:left, :center),fontsize = 25,alpha=2)
+text!(ax,L"N_c^V",position=(N_C, 1.1*c_vio),align = (:left, :bottom),fontsize = 26)
+
+# CairoMakie.scatter!(ax,Point2f(1,0.01))
+CairoMakie.scatter!(ax,Point2f(N_C,x_worst[N_C_ind]),color = :green,marker = :circle,markersize =12 ,strokecolor = :black,strokewidth = 1)
+# text!(ax, Point2f(N_C,x_worst[N_C_ind]), text = [L"\epsilon = $(x_worst[N_C_ind])"], align = (:right, :center), offset = (-10, 0),color=colors[1],fontsize = 25)
+text!(ax, Point2f(N_C, x_worst[N_C_ind]), text = ["ϵ = "*string(round(x_worst[N_C_ind], digits=3))],align = (:right, :center),offset = (-10, 0),color = colors[1],fontsize = 22,font=:bold, )   #strokewidth = 0.5, strokecolor = :black)
+
+CairoMakie.scatter!(ax,Point2f(N_C,y_worst[N_C_ind]),color = :blue,marker = :circle,markersize =12 ,strokecolor = :black,strokewidth = 1)
+text!(ax, Point2f(N_C, y_worst[N_C_ind]), text = ["ϵ = "*string(round(y_worst[N_C_ind], digits=3))],align = (:right, :center),offset = (-10, 0),color = colors[2],fontsize = 22,font=:bold, )   #strokewidth = 0.5, strokecolor = :black)
+CairoMakie.scatter!(ax,Point2f(N_C,z_worst[N_C_ind]),color = :red,marker = :circle,markersize =12 ,strokecolor = :black,strokewidth = 1)
+text!(ax, Point2f(N_C, z_worst[N_C_ind]), text = ["ϵ = "*string(round(z_worst[N_C_ind], digits=3))],align = (:right, :center),offset = (-10, 0),color = colors[3],fontsize = 22,font=:bold, )   #strokewidth = 0.5, strokecolor = :black)
+legend3=Legend(
+     f[0, 1:2],
+    [[bx],
+        lines!(ax, [0,1], [0,0], color=:black, linewidth=2), [ by],
+        lines!(ax, [0,1], [0,0], color=:black, linewidth=2, linestyle=:dash), [bz],h0],
+    ["TR = $(round(report_TR_Q[opt,"TR"],digits=3)) (chosen TR)", 
+        "Worst-case violations ",
+        "TR = $(round(report_TR_Q[hig,"TR"],digits=3)) (larger TR)",
+         "Expected remaining violation",
+        "TR = $(round(report_TR_Q[low,"TR"],digits=3)) (smaller TR)",
+         "Initial violation"],
+    # ["Size", "Color"],
+    tellheight = true,
+    tellwidth = true,
+    valign=:center,
+    orientation = :horizontal,
+    nbanks = 2,
+    labelsize = 19
+)
+
+# legend3.padding = (10, 10, 10, 10)
+f
