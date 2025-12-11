@@ -149,6 +149,155 @@ function PF_Valid_C(OP_NValid::Dict{String,Any}, Runcode) #Array{Union{Float64,A
     Avgcost = sum(C_cost, dims=2) ./ nCon
     return Avgcost, Vio_Sum, OP_Valid, Vio_general
 end
+function ST_PF_Valid_C(OP_NValid::Dict{String,Any}, Runcode) #Array{Union{Float64,Array{Float64}}}
+    #OP_NValid=OP_init_NV
+    OP_Valid = deepcopy(OP_NValid)
+    nBus = size(OP_NValid["V_c_Line"], 2)
+    nCon = size(OP_NValid["PG_c_Line"], 3)
+    nT = size(OP_NValid["PG_c_Line"], 1)
+    TSysData = deepcopy(SysData::Dict{String,DataFrame})
+    C_cost = zeros(nT, nCon)
+    # OP_Valid["CSens"] = Array{Matrix{Float64},2}(undef, nT, nCon)
+    OP_Valid["CJacob"]=[spzeros(Float64,2*nBus, 2*nBus) for _ in 1:nT, _ in 1:nCon]
+    OP_Valid["Pinj_c_Line"] = Array{Float64,3}(undef, nT, nBus, nCon)
+    OP_Valid["Qinj_c_Line"] = Array{Float64,3}(undef, nT, nBus, nCon)
+    Vio_general = [DataFrame() for _ in 1:nT, _ in 1:nCon]
+    OP_Valid=pre_prepration!(OP_Valid,TSysData;nCon=nCon,nT=nT,C="ConL")
+    Threads.@threads for t = 1:nT
+        for i = 1:nCon
+            print(t)
+            ASysData= Prepare_Dataset(OP_Valid, TSysData, t; i=i, C="CASCADE")
+            #power injections before PF:
+            # p_inj00 = zeros(size(ASysData["Bus"], 1))
+            # q_inj00 = zeros(size(ASysData["Bus"], 1))
+            # p_inj00[ASysData["Gen"]."Bus"] .= OP_Valid["PG_c_Line"][t, :, i]
+            # q_inj00[ASysData["Gen"]."Bus"] .= OP_Valid["QG_c_Line"][t, :, i]
+            # p_inj00[ASysData["ESS"]."Bus"] .+= ASysData["ESS"]."PG" 
+            # p_inj00[ASysData["RES"]."Bus"] += ASysData["RES"]."PG"
+            # q_inj00[ASysData["RES"]."Bus"] += ASysData["RES"]."QG"
+            # p_inj00[ASysData["Load"]."Bus_N"] .-= ASysData["Load"]."Pd (pu)"
+            # q_inj00[ASysData["Load"]."Bus_N"] .-= ASysData["Load"]."Qd (pu)"
+            # q_inj00[ASysData["Shunt"]."Bus"] .+= ASysData["Shunt"]."bsh0"
+            CSysData = deepcopy(ASysData)
+            V, θ, p_inj, q_inj, convergence_indicator, Iij, percent, PGGG, QGGG, Jacob = multislack_acpf_order_pmaxqmax(CSysData["Bus"], CSysData["Line"], CSysData["Trans"], CSysData["Gen"], CSysData["Load"], CSysData["Shunt"], CSysData["RES"], CSysData["ESS"], [])
+            # V, θ, p_inj, q_inj, convergence_indicator, Iij, percent, PGGG, QGGG, Jacob, LNS_stage = cascading_sim(CSysData["Bus"], CSysData["Line"], CSysData["Trans"], CSysData["Gen"], CSysData["Load"], CSysData["Shunt"],CSysData["RES"],CSysData["ESS"],Int64[];printcascade=true);
+            # V, θ, p_inj, q_inj, convergence_indicator, Iij, percent, PGGG, QGGG, Jacob, LNS_stage, casrep = cascading_sim(CSysData["Bus"], CSysData["Line"], CSysData["Trans"], CSysData["Gen"], CSysData["Load"], CSysData["Shunt"],CSysData["RES"],CSysData["ESS"],Int64[]);
+            # casrep=DataFrame()
+            # casrep.Stage[1]=1
+            # casrep.Jcbs[3]
+            # casreps[t,i]=casrep
+            # if sum(LNS_stage)!=0
+            #     println("time '$(t)' and con '$i'")
+            #     println("$(length(LNS_stage)) stage of Cascade cause $(sum(LNS_stage)) p.u. LNS ")
+            # end
+            if Linearization_TYPE[Runcode[2]] in ["SENS", "Hybrid"]
+                isl=findall(x -> x == 3, CSysData["Bus"]."Bus_Type")
+                nBus=size(CSysData["Bus"], 1)
+                # OP_Valid["CSens"][t, i] = Partials(Jacob, V,isl,nBus)
+                OP_Valid["CJacob"][t, i] .= Jacob
+            end
+            if convergence_indicator != 1
+                @error("PF not converged for contingency number $i and time step $t")
+            end
+            percentall = zeros(size(TSysData["Line"], 1))
+            Iijall = zeros(size(TSysData["Line"], 1))
+            Iijall[ASysData["Line"]."Line_N"] = Iij
+            percentall[ASysData["Line"]."Line_N"] = percent
+            # for j=1:size(TSysData["Line"],1)
+            #     if j<ASysData["ConL"]."#"[i] percentall[j]=percent[j] elseif j==TSysData["ConL"]."#"[i] percentall[j]=0 elseif j>TSysData["ConL"]."#"[i] percentall[j]=percent[j-1] end
+            # end
+            Vio_general[t, i] = make_vio_general(V, percentall, Iijall)
+            OP_Valid["V_c_Line"][t, :, i] = V
+            OP_Valid["θ_c_Line"][t, :, i] = θ
+            OP_Valid["PG_c_Line"][t, :, i] = PGGG
+            OP_Valid["QG_c_Line"][t, :, i] = QGGG
+            C_cost[t, i] = obj_cal(PGGG, OP_Valid, t; i=i, C="ConL")
+            # OP_Valid["CSens"][t, i] = Sens
+            OP_Valid["Pinj_c_Line"][t, :, i] = p_inj
+            OP_Valid["Qinj_c_Line"][t, :, i] = q_inj
+        end
+    end
+    Vio_Sum = make_vio_sum(Vio_general)
+    Avgcost = sum(C_cost, dims=2) ./ nCon
+    return Avgcost, Vio_Sum, OP_Valid, Vio_general
+end
+
+function Cascade_Sim(OP_NValid::Dict{String,Any}, Runcode) #Array{Union{Float64,Array{Float64}}}
+    #OP_NValid=OP_init_NV
+    OP_Valid = deepcopy(OP_NValid)
+    I_relax=1.037
+    nBus = size(OP_NValid["V_c_Line"], 2)
+    nCon = size(OP_NValid["PG_c_Line"], 3)
+    nT = size(OP_NValid["PG_c_Line"], 1)
+    TSysData = deepcopy(SysData::Dict{String,DataFrame})
+    C_cost = zeros(nT, nCon)
+    # OP_Valid["CSens"] = Array{Matrix{Float64},2}(undef, nT, nCon)
+    OP_Valid["CJacob"]=[spzeros(Float64,2*nBus, 2*nBus) for _ in 1:nT, _ in 1:nCon]
+    OP_Valid["Pinj_c_Line"] = Array{Float64,3}(undef, nT, nBus, nCon)
+    OP_Valid["Qinj_c_Line"] = Array{Float64,3}(undef, nT, nBus, nCon)
+    Vio_general = [DataFrame() for _ in 1:nT, _ in 1:nCon]
+    casreps=[DataFrame() for _ in 1:nT, _ in 1:nCon]
+    OP_Valid=pre_prepration!(OP_Valid,TSysData;nCon=nCon,nT=nT,C="ConL")
+    Threads.@threads for t = 1:nT
+        for i = 1:nCon
+            print(t)
+            ASysData= Prepare_Dataset(OP_Valid, TSysData, t; i=i, C="CASCADE", I_relax=I_relax)
+            #power injections before PF:
+            # p_inj00 = zeros(size(ASysData["Bus"], 1))
+            # q_inj00 = zeros(size(ASysData["Bus"], 1))
+            # p_inj00[ASysData["Gen"]."Bus"] .= OP_Valid["PG_c_Line"][t, :, i]
+            # q_inj00[ASysData["Gen"]."Bus"] .= OP_Valid["QG_c_Line"][t, :, i]
+            # p_inj00[ASysData["ESS"]."Bus"] .+= ASysData["ESS"]."PG" 
+            # p_inj00[ASysData["RES"]."Bus"] += ASysData["RES"]."PG"
+            # q_inj00[ASysData["RES"]."Bus"] += ASysData["RES"]."QG"
+            # p_inj00[ASysData["Load"]."Bus_N"] .-= ASysData["Load"]."Pd (pu)"
+            # q_inj00[ASysData["Load"]."Bus_N"] .-= ASysData["Load"]."Qd (pu)"
+            # q_inj00[ASysData["Shunt"]."Bus"] .+= ASysData["Shunt"]."bsh0"
+            CSysData = deepcopy(ASysData)
+            # V, θ, p_inj, q_inj, convergence_indicator, Iij, percent, PGGG, QGGG, Jacob = multislack_acpf_order_pmaxqmax(CSysData["Bus"], CSysData["Line"], CSysData["Trans"], CSysData["Gen"], CSysData["Load"], CSysData["Shunt"], CSysData["RES"], CSysData["ESS"], [])
+            # V, θ, p_inj, q_inj, convergence_indicator, Iij, percent, PGGG, QGGG, Jacob, LNS_stage = cascading_sim(CSysData["Bus"], CSysData["Line"], CSysData["Trans"], CSysData["Gen"], CSysData["Load"], CSysData["Shunt"],CSysData["RES"],CSysData["ESS"],Int64[];printcascade=true);
+            V, θ, p_inj, q_inj, convergence_indicator, Iij, percent, PGGG, QGGG, Jacob, LNS_stage, casrep = cascading_sim(CSysData["Bus"], CSysData["Line"], CSysData["Trans"], CSysData["Gen"], CSysData["Load"], CSysData["Shunt"],CSysData["RES"],CSysData["ESS"],Int64[]);
+            
+            @. casrep."VM" = casrep."VM".*I_relax
+            # casrep=DataFrame()
+            # casrep.Stage[1]=1
+            # casrep.Jcbs[3]
+            casreps[t,i]=casrep
+            # if sum(LNS_stage)!=0
+            #     println("time '$(t)' and con '$i'")
+            #     println("$(length(LNS_stage)) stage of Cascade cause $(sum(LNS_stage)) p.u. LNS ")
+            # end
+            if Linearization_TYPE[Runcode[2]] in ["SENS", "Hybrid"]
+                isl=findall(x -> x == 3, CSysData["Bus"]."Bus_Type")
+                nBus=size(CSysData["Bus"], 1)
+                # OP_Valid["CSens"][t, i] = Partials(Jacob, V,isl,nBus)
+                OP_Valid["CJacob"][t, i] .= Jacob
+            end
+            if convergence_indicator != 1
+                @error("PF not converged for contingency number $i and time step $t")
+            end
+            percentall = zeros(size(TSysData["Line"], 1))
+            Iijall = zeros(size(TSysData["Line"], 1))
+            Iijall[ASysData["Line"]."Line_N"] = Iij
+            percentall[ASysData["Line"]."Line_N"] = percent
+            # for j=1:size(TSysData["Line"],1)
+            #     if j<ASysData["ConL"]."#"[i] percentall[j]=percent[j] elseif j==TSysData["ConL"]."#"[i] percentall[j]=0 elseif j>TSysData["ConL"]."#"[i] percentall[j]=percent[j-1] end
+            # end
+            Vio_general[t, i] = make_vio_general(V, percentall, Iijall)
+            OP_Valid["V_c_Line"][t, :, i] = V
+            OP_Valid["θ_c_Line"][t, :, i] = θ
+            OP_Valid["PG_c_Line"][t, :, i] = PGGG
+            OP_Valid["QG_c_Line"][t, :, i] = QGGG
+            C_cost[t, i] = obj_cal(PGGG, OP_Valid, t; i=i, C="ConL")
+            # OP_Valid["CSens"][t, i] = Sens
+            OP_Valid["Pinj_c_Line"][t, :, i] = p_inj
+            OP_Valid["Qinj_c_Line"][t, :, i] = q_inj
+        end
+    end
+    Vio_Sum = make_vio_sum(Vio_general)
+    Avgcost = sum(C_cost, dims=2) ./ nCon
+    return Avgcost, Vio_Sum, OP_Valid, Vio_general,casreps
+end
 
 function PF_Valid_C2(OP_NValid::Dict{String,Any}, Runcode) #Array{Union{Float64,Array{Float64}}}
     #OP_NValid=OP_init_NV
@@ -374,9 +523,14 @@ function AC_PFCheck(OP, Runcode)
     Ncost, Vio_Sum_N, OP_init_NV, Vio_general_N =PF_Valid_N(OP, Runcode)
     GC.gc()
     if Problem_Type in ["SCOPF","RBOPF"]
+        # AVG_C_cost, Vio_Sum_C, OP_initV, Vio_general_C = ST_PF_Valid_C(OP_init_NV, Runcode)
         AVG_C_cost, Vio_Sum_C, OP_initV, Vio_general_C = PF_Valid_C(OP_init_NV, Runcode)
         # AVG_C_cost, Vio_Sum_C, OP_initV, Vio_general_C, casreps = PF_Valid_C2(OP_init_NV, Runcode)
-
+        _, _, _, _, casreps = Cascade_Sim(OP_initV, Runcode)
+        # Cascade_Sim(OP_init_NV, Runcode);
+        if !isempty(findall(x-> sum(x."LNS_T")>0.0, casreps))
+            @warn "There is new Short-term security problem"
+        end
         GC.gc()
     elseif Problem_Type == "OPF"
         OP_initV = OP_init_NV

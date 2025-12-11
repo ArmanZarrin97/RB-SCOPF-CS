@@ -2,9 +2,10 @@
 
 function CSC(B::DataFrame, L::DataFrame, T::DataFrame, G::DataFrame, Ld::DataFrame, Shu::DataFrame, REN::DataFrame, BAT::DataFrame, Lout::Vector{Int64},Gcas)
     # B, L, T, G, Ld, Shu, Lout=Bs, Ls, Ts, Gs, Lds, Shus, Lout
-    casrep=DataFrame(Stage=[], LL=[], LNS_V=[], LNS_F=[], LNS_T=[], Jcbs=[])
+    casrep=DataFrame(Stage=[], LL=[],VM=[], LNS_V=[], LNS_F=[], LNS_T=[], Jcbs=[])
     Rn = []
     Lvio = []
+    Lvio_stage = []
     Lvio_tot = []
     H = 1
     u = []
@@ -29,6 +30,7 @@ function CSC(B::DataFrame, L::DataFrame, T::DataFrame, G::DataFrame, Ld::DataFra
 
         for i = 1:n_i
             main_name_L = r[i]["Line_i"]
+            Lvio_stage = r[i]["vio_i"]
             Lvio = main_name_L[r[i]["vio_i"]]
         end
         push!(Rn, r)
@@ -41,10 +43,11 @@ function CSC(B::DataFrame, L::DataFrame, T::DataFrame, G::DataFrame, Ld::DataFra
         LNS = LNS_f + LNS_v
         Lvio_tot = union(Lvio_tot, Lvio, Lout)
         Lvio_tot = sort(Lvio_tot)
-        notLres=findall( in(Set(Lvio_tot)),Li."Line_N")
+        notLres_tot=findall( in(Set(Lvio_tot)),Li."Line_N")
+        # notLres=findall( in(Set(Lvio)),L."Line_N")
 
         push!(LNS_stage, LNS)
-        push!(casrep,[H-1 [notLres] LNS_v LNS_f LNS [Jcb]])
+        push!(casrep,[H-1 [Lvio] [r[n_i]["percentIij"][Lvio_stage]] LNS_v LNS_f LNS [Jcb]])
 
         line_viol = length(Lvio)
 
@@ -57,7 +60,7 @@ function CSC(B::DataFrame, L::DataFrame, T::DataFrame, G::DataFrame, Ld::DataFra
             # # Lres = setdiff(collect(1:size(Li, 1)), Lvio_tot)
             # # L = Li[Lres, :]
             # notLres=findall( in(Set(Lvio_tot)),Li."Line_N")
-            L = Li[Not(notLres), :]
+            L = Li[Not(notLres_tot), :]
             if Gcas.print
                 println()
                 printstyled("New   lines outaged: $Lvio"; color=:1, blink=true)

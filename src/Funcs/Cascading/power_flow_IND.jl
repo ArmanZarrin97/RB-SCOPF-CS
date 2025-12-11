@@ -12,7 +12,7 @@ function multislack_acpf_order_pmaxqmax3(y_bus_i, B, L, G, Ld, Shu, REN, BAT, or
     QshuntBUS[ish]  = Shu[:, 2]
 
     (vmag_i, vang_i, delta_mismatch_inj, mmm_i, p_i, q_i, p_V, q_V, cg_t, pim_i, df_i, fm_i, sm_i, Gs, Bs, itr_i, sij_i, vio_i, Iij, percentIij, is_slack, Jcb) = multislack_acpf_order_V2(y_bus_i, B, L, G, Ld, Shu, REN, BAT, order, ctd)
-    while exit == 0
+    while exit == 0 && cg_t==1
         # G[:, 2] = p_i[ign] + p_V[ign]
         # G[:, 3] = q_i[ign] + q_V[ign] - QshuntBUS[ign]
         vio_g1 = find_beyond(G[:, 2], G[:, 7], eps_g)

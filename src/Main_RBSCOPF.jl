@@ -15,12 +15,15 @@ include("Funcs/Cascading/Cascading_tool.jl")
 
 
 global Problem_Type="SCOPF";global Ptype_="DA";
+global Cascade_Opt=false
+# global Risk_cascade= false
 #---------------------Reading Input files
 global Test_Sys="39bus/";global nTL=24; global Report="feasiblity"# temporary values
 global ERORR=Dict(); ERORR["DA"]=[0.00 0.00];ERORR["RT"]=[0.00 0.00];new_profile=[true true];global printlevel=[1 0]; #[terminal print, ods print];
 global loadbusinjection="false";global errortype="Normal"
 
 Set_global_parameters(Test_Sys)
+global I_relax=1.037
 
 #----------------------Set Initial values
 Linearization_INIT=Dict(1=>"Flat",2=> "Exact", 3=> "DA5",4=> "DA10",5=> "DA20", 6=>"DA30" ) #
@@ -72,7 +75,7 @@ BSON.@load Path*"../Result/NL_Solution_SCOPF.bson" Init_OP_SC SLP_Rep_SC
 # if Problem_Type=="SCOPF"
 #     V_c_Line_1,θ_c_Line_1,PG_c_Line_1,QG_c_Line_1=sqrt.(value.(init_model[:e_c_Line].^2 +init_model[:f_c_Line].^2)),atan.(value.(<init_model[:f_c_Line]),value.(init_model[:e_c_Line])),value.(init_model[:PG_c_Line]),value.(init_model[:QG_c_Line])
 # end
-Runcode=(2,3)
+Runcode=(3,3)
 # @load "NL_Solution.jld2"
 
 # OP_NLP=Init_OP["Exact"]

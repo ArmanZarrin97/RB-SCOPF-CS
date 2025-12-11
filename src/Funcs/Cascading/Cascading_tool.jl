@@ -28,7 +28,7 @@ function cascading_sim(Bs::DataFrame, Ls::DataFrame, Ts::DataFrame, Gs::DataFram
     # BATs = deepcopy(BAT)
 
     # (Lds, Gs) = initiate_IND(Bs, Ls, Ts, Gs, Lds, Shus); # Please deactive this, and perform the initialization manually instead
-    # # OP_Valid["V"][1, Ld[:, 1]]
+    # # OP_Valid["V"][1, Ld[:, 1]
     # Globcascade.OptSens=DataFrame()
     LdI = zeros(size(Lds, 1));LdI_v = zeros(size(Lds, 1));
     Gt = zeros(size(Gs, 1));nBus = size(Bs, 1)

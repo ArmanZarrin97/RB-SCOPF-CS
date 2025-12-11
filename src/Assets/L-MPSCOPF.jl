@@ -3,7 +3,7 @@ include("../Funcs/SCOPF/L_Model_Build.jl")
 include("../Funcs/SCOPF/L_PowerFlow.jl")
 
 export L_MPSCOPF
-function L_MPSCOPF(glob_input,Proffin; fixed_SOC_=1,conprob=0.05,OPFon=0,Winit=0,t0=1,WP=1,LinMethod="None",Lininit=Dict{String,Any}(),relaxconfac=0.0) #Array{Union{Float64,Array{Float64}}} # WP: without Penalty #OPFon: 0=>SCOPF, 1=>OPF #Winit: 0=>No initial value, 1=>Initial value #t0: first time period # fixed_SOC_: 0=>No fixed SOC, 1=>Fixed SOC # conprob: contingency probability summation # Proffin: Profile information
+function L_MPSCOPF(glob_input,Proffin,casreps; fixed_SOC_=1,conprob=0.05,OPFon=0,Winit=0,t0=1,WP=1,LinMethod="None",Lininit=Dict{String,Any}(),relaxconfac=0.0) #Array{Union{Float64,Array{Float64}}} # WP: without Penalty #OPFon: 0=>SCOPF, 1=>OPF #Winit: 0=>No initial value, 1=>Initial value #t0: first time period # fixed_SOC_: 0=>No fixed SOC, 1=>Fixed SOC # conprob: contingency probability summation # Proffin: Profile information
     #conprob=conprob_;LinMethod=LinMethod;Lininit=OP_init
     #Winit=0;t0=1;WP=1;
     #Winit=0;t0=1;WP=1;fixed_SOC_=1;OPFon=0;
@@ -24,28 +24,22 @@ function L_MPSCOPF(glob_input,Proffin; fixed_SOC_=1,conprob=0.05,OPFon=0,Winit=0
     ##------------------ Normal Operation Model -----------------------------
     LSCOPF,N_Var=Normal_PB(LSCOPF,nTP,raw,initraw,ctdall,fixed_SOC,Proffin,Winit,initial,LinMethod,Lininit);
 
-    # findall(N_Var[15][1].<N_Var[15][2])
-    # findall(N_Var[15][3].<N_Var[15][4])
-
-    # @assert begin
-    #     sum(N_Var[15][1].< -1e-5)==0
-    #     sum(N_Var[15][2].> 1e-5)==0
-    #     sum(N_Var[15][3].< -1e-5)==0
-    #     sum(N_Var[15][4].> 1e-5)==0
-    #         end
-
     C_Var= 0,0,0,0,0,0,0,0,0,[0,0],[0],Dict()
     ##------------------ Contingency Operation Model ------------------------
     if (OPFon==0 && raw["nConL"]!=0)
         LSCOPF,C_Var=Contingency_L_PB(LSCOPF,nTP,raw,initraw,ctdall,fixed_SOC,N_Var,Proffin,CCT,initial,LSpermit,LinMethod,Lininit,relaxconfac);
     end
-    # C_Var[12]
-    # findall(C_Var[12][1].<C_Var[12][2].-1e-5)
 
-    # findall(C_Var[12][3].<C_Var[12][4])
+    if (OPFon==0 && raw["nConL"]!=0 && !isnothing(casreps) && LinMethod == "SENS")
+        LSCOPF, CascadeInfo=Cascade_L_PB(LSCOPF,nTP,raw,casreps,Lininit);
+        # LSCOPF[:CNcascade_LP][1]
+        # LSCOPF[:slack_Cascade_LP]
+    else
+        CascadeInfo=Dict()
+    end
     ##------------------ Setting SENS Constraints -------------------------------
     if LinMethod =="SENS"
-        LSCOPF= Sensitivity_constraints(LSCOPF,N_Var,C_Var,OPFon,raw,Lininit,ctdall)
+        LSCOPF= Sensitivity_constraints(LSCOPF,CascadeInfo,N_Var,C_Var,OPFon,raw,Lininit,ctdall)
     else
         LSCOPF[:modTR]=[0.01 0.01]
         LSCOPF[:acc]=[0.0 0.0]
@@ -54,50 +48,9 @@ function L_MPSCOPF(glob_input,Proffin; fixed_SOC_=1,conprob=0.05,OPFon=0,Winit=0
     ##------------------ Setting Objective Function ---------------------
     LSCOPF=Objective_function(LSCOPF,nTP,raw,initraw,Proffin,N_Var,C_Var,sl_F,sl_V,t0,Lininit,LinMethod;lambda=conprob,OPFon=OPFon,WP=WP)
     #----------------Solve and Results --------------------------------------
-    # fix.(LSCOPF[:shed], 0.0; force=true)
-    # fix.(LSCOPF[:ΔPinjP], 0.0; force=true)
-    # fix.(LSCOPF[:ΔPinjN], 0.0; force=true)
-    # fix.(LSCOPF[:ΔQinjP], 0.0; force=true)
-    # fix.(LSCOPF[:ΔQinjN], 0.0; force=true)
-    # fix.(LSCOPF[:ΔPinjP_c_Line], 0.0; force=true)
-    # fix.(LSCOPF[:ΔPinjN_c_Line], 0.0; force=true)
-    # fix.(LSCOPF[:ΔQinjP_c_Line], 0.0; force=true)
-    # fix.(LSCOPF[:ΔQinjN_c_Line], 0.0; force=true)
-    # @objective(LSCOPF, Min,  0)
     @info "Model is ready"
     LSCOPF=Solve_P(LSCOPF)
 
-    # vars = all_variables(LSCOPF)
-    # v = vars[4710]<
-    # ctdall[2572,:]
-    # # println("Lower bound: ", lower_bound(v))
-    # # println("Upper bound: ", upper_bound(v))
-    # Lininit["Pshed"][:,1872]
-    # raw["PActBus"][589]
-    # raw["Load"][1872,:]
-    # con_ref=LSCOPF[:NTrust_RegionP2][6,589]
-    # delete(LSCOPF, con_ref)
-    # con_ref=LSCOPF[:NTrust_RegionP1][6,589]
-
-    # v=LSCOPF[:shed][6,1872]
-
-    # DataFrame(real_obj=value.(LSCOPF[:real_objective]),
-    #          TR_relax=value.(LSCOPF[:cost_TR_relaxN]),
-    #          TR_relaxC=value.(LSCOPF[:cost_TR_relaxC]),
-    #          TR_PenN=value.(LSCOPF[:cost_TR_PenN]),
-    #          TR_PenC=value.(LSCOPF[:cost_TR_PenC])
-    #          )
-    # termination_status(LSCOPF)
-    # map=relax_with_penalty!(LSCOPF)
-    # LSCOPF[:CEActive_power_balance][8,3,2]
-    # OP_init["Pshed_c_Line"][8,3,2]
-    # OP_init["Pinc_c_Line"][8,1,2]
-    # for (con, penalty) in map
-    #     violation = value(penalty)
-    #     if violation > 1e-1
-    #         println("Constraint `$(name(con))` is violated by $violation")
-    #     end
-    # end
     @info "Solve compeleted!"
     if LinMethod != "None"
         if LinMethod=="Yang"

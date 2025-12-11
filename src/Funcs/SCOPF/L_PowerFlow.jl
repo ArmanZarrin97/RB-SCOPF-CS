@@ -508,6 +508,100 @@ function Cal_SENS_new2(Lininit::Dict{String,Any}, ctdall, nTP::Int64, raw::Dict{
     return SENSDict
 end
 
+
+# function Cal_SENS_Cascade(Lininit::Dict{String,Any}, ctdall, nTP::Int64, raw::Dict{String, Any})
+function Cal_SENS_Cascade(Jcb,lineind,t,raw::Dict{String, Any}, Lininit::Dict{String,Any})
+    # lineind=casreps[t,5][1,"LL"];Jcb=casreps[t,5][1,"Jcbs"]
+    # --- unpack / init ---
+    nbus::Int64 = Int64(size(Jcb,1)/2)
+    nline::Int64 = size(lineind,1)
+    ntrans::Int64 = 0
+    nPbus::Int64 = raw["nPActBus"]
+    nQbus::Int64 = raw["nQActBus"]
+    Pbus = raw["PActBus"]
+    Qbus = raw["QActBus"]
+
+
+    CC = 1
+    V_0 = Lininit["V"]
+    θ_0 = Lininit["θ"]
+    TR = ones(Float64, nline + ntrans)
+    if ntrans != 0
+        TR[nline+1:end] .= raw["Trans"]."ratio"
+    end
+
+    Names = ["From","To","g (pu)","b (pu)","g_sh (pu)","b_sh (pu)"]
+    # df::DataFrame = vcat(raw["Line"][:,Names], raw["Trans"][:,Names])
+    df::DataFrame = raw["Line"][lineind,Names]
+    g = df."g (pu)"
+    b = df."b (pu)"
+    fb = df."From"
+    tb = df."To"
+
+    # precomputed voltage/angle differences (shaped nTP x nLine x CC or similar)
+    Δθ = @. θ_0[t, fb, 1]
+    Δθ .= θ_0[t, fb, 1] .- θ_0[t, tb, 1]   # Δθ[t, line, c] = θ_0[t,fb,c] - θ_0[t,tb,c]
+    Vn = V_0[t, fb, 1]
+    Vm = V_0[t, tb, 1]
+
+    # note: line admittance scalar per line -> replicate into a 3D array for indexing convenience
+    Line_admittance = @. g.^2 .+ b.^2
+    # --- allocate Pa_IV / Pa_Iθ (one unique sparse matrix per (t,c)) ---
+    pa_template = spzeros(Float64, nline + ntrans, nbus)
+    Pa_IV = copy(pa_template)
+    Pa_Iθ = copy(pa_template)
+
+    tmp_linevals = similar(Line_admittance, length(Line_admittance))  # reused for elementwise multiplications
+
+
+    # --- compute Pa_IV and Pa_Iθ row values
+    # We'll compute the dense vector of values for all lines then assign into sparse matrix entries
+    @inbounds begin
+        # values for "from" side
+        @. tmp_linevals = Line_admittance * ((2*Vn) - 2*(Vm)*cos((Δθ)))
+        for (idx, val) in enumerate(tmp_linevals)     # assign into sparse matrix using CartesianIndex
+            Pa_IV[CartesianIndex(idx, fb[idx])] = val
+        end
+
+        # values for "to" side (other term)
+        @. tmp_linevals = Line_admittance * ((2*Vm) - 2*(Vn)*cos((Δθ)))
+        for (idx, val) in enumerate(tmp_linevals)
+            Pa_IV[CartesianIndex(idx, tb[idx])] = val
+        end
+
+        # term for angle part
+        @. tmp_linevals = Line_admittance * (2 * (Vn) * (Vm) * sin((Δθ)))
+        for (idx, val) in enumerate(tmp_linevals)
+            Pa_Iθ[CartesianIndex(idx, fb[idx])] = val
+            Pa_Iθ[CartesianIndex(idx, tb[idx])] = -val
+        end
+    end
+
+    fJcb = lu(Jcb)
+    n = size(Jcb, 1)
+
+    I_sub_Pbus = I(n)[:, Pbus]
+    I_sub_Qbus = I(n)[:, nbus .+ Qbus]
+
+    # SENStemp_* are (n x nPbus) and (n x nQbus)
+    SENStemp_Pbus = fJcb \ I_sub_Pbus
+    SENStemp_Qbus = fJcb \ I_sub_Qbus
+
+    # --- compute S_IP and S_IQ via mul! directly into the preallocated unique matrices ---
+    S_IP_mat = zeros(Float64, nline + ntrans, nPbus)
+    S_IQ_mat = zeros(Float64, nline + ntrans, nQbus)
+
+    @inbounds begin
+        mul!(S_IP_mat, Pa_IV, view(SENStemp_Pbus, nbus+1:size(SENStemp_Pbus,1), :), 1, 0)
+        mul!(S_IP_mat, Pa_Iθ, view(SENStemp_Pbus, 1:nbus, :), 1, 1)
+
+        mul!(S_IQ_mat, Pa_IV, view(SENStemp_Qbus, nbus+1:size(SENStemp_Qbus,1), :), 1, 0)
+        mul!(S_IQ_mat, Pa_Iθ, view(SENStemp_Qbus, 1:nbus, :), 1, 1)
+    end
+
+    # hcat(S_IP_mat,S_IQ_mat)
+    return hcat(S_IP_mat,S_IQ_mat)
+end
 # function Cal_SENS_new(Lininit::Dict{String,Any}, ctdall, nTP::Int64, raw::Dict{String, Any}; C::String="N")
 #     # Extract system parameters
 #     nbus, nline, ntrans = raw["nBus"], raw["nLine"], raw["nTrans"]
@@ -2263,7 +2357,7 @@ function Linear_SENS_CP_new(SCOPF,Vars,Parlist,nTP,raw::Dict{String, Any},States
     return SCOPF
 end
 
-function Sensitivity_constraints(LSCOPF,N_Var,C_Var,OPFon,raw,Lininit,ctdall)
+function Sensitivity_constraints(LSCOPF,CascadeInfo,N_Var,C_Var,OPFon,raw,Lininit,ctdall)
     SENSDict_All=Dict()
     Parlist_N=N_Var[14];Vars_N=N_Var[13]
     Parlist_C=C_Var[11];Vars_C=C_Var[10]
@@ -2294,25 +2388,25 @@ function Sensitivity_constraints(LSCOPF,N_Var,C_Var,OPFon,raw,Lininit,ctdall)
     end
 
     # function find_ramp_rate_violations(Lininit,raw)
-        if size(Lininit["PG"],1)>1
-            PreT = vcat(Lininit["PG"][2:end,:], Lininit["PG"][end:end,:])  # Append row of zeros
-            nextT=vcat( Lininit["PG"][1:1,:],Lininit["PG"][1:end-1,:])
+    if size(Lininit["PG"],1)>1
+        PreT = vcat(Lininit["PG"][2:end,:], Lininit["PG"][end:end,:])  # Append row of zeros
+        nextT=vcat( Lininit["PG"][1:1,:],Lininit["PG"][1:end-1,:])
 
-            adiff=nextT-Lininit["PG"]
-            bdiff=Lininit["PG"]-PreT
+        adiff=nextT-Lininit["PG"]
+        bdiff=Lininit["PG"]-PreT
 
-            Base_TR_N=round.(max.(abs.(adiff).- Td*(raw["Gen"].Ramp)',abs.(bdiff).- Td*(raw["Gen"].Ramp)',abs.(adiff+bdiff).-(2*Td*raw["Gen"].Ramp)',0),digits=4)
-            if OPFon==0
-                cdiff=Lininit["PG_c_Line"].-Lininit["PG"]
+        Base_TR_N=round.(max.(abs.(adiff).- Td*(raw["Gen"].Ramp)',abs.(bdiff).- Td*(raw["Gen"].Ramp)',abs.(adiff+bdiff).-(2*Td*raw["Gen"].Ramp)',0),digits=4)
+        if OPFon==0
+            cdiff=Lininit["PG_c_Line"].-Lininit["PG"]
 
-                Base_TR_C=round.(max.(abs.(cdiff).-CCT*(raw["Gen"].Ramp)',0),digits=4)
-            else
-                Base_TR_C=zeros(size(Lininit["PG"]))
-            end
+            Base_TR_C=round.(max.(abs.(cdiff).-CCT*(raw["Gen"].Ramp)',0),digits=4)
         else
-            Base_TR_N=zeros(size(Lininit["PG"]))
             Base_TR_C=zeros(size(Lininit["PG"]))
         end
+    else
+        Base_TR_N=zeros(size(Lininit["PG"]))
+        Base_TR_C=zeros(size(Lininit["PG"]))
+    end
     #     return Base_TR_N,Base_TR_C
     # end
 
@@ -2343,7 +2437,7 @@ function Sensitivity_constraints(LSCOPF,N_Var,C_Var,OPFon,raw,Lininit,ctdall)
 
     # @time TR,Indices,acc,Injlimit,Worst_Vio=Set_TR_new(Base_TR_N,Base_TR_C,Lininit,SENSDict_All,I2_0,V_0,raw,PBound,QBound,;cl=cl)
     # @time TR,Indices,acc,Injlimit,Worst_Vio=Set_TR_new2(Base_TR_N,Base_TR_C,SENSDict_All,I2_0,V_0,raw,PBound,QBound,;cl=cl)
-    TR,Indices,acc,Injlimit,Worst_Vio=Set_TR_new2(Base_TR_N,Base_TR_C,SENSDict_All,I2_0,V_0,raw,PBound,QBound,;cl=cl)
+    TR,Indices,acc,Injlimit,Worst_Vio=Set_TR_new2(Base_TR_N,Base_TR_C,SENSDict_All,I2_0,V_0,raw,PBound,QBound,CascadeInfo;cl=cl)
 
 
 

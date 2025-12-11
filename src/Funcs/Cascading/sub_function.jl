@@ -570,7 +570,7 @@ function SV2(Ld, vmag, alarm, Gcas)
             dVsh = Vth - V
             if dVsh > eps_v
                 # printstyled("There is a voltage vioaltion load $(Ld[k, 14]), {$V}:"; color=:blue, blink=true)
-                println()
+                # println()
                 Ld, Gcas = shedv2(Ld, dVsh, k,Gcas)
             end
         end
@@ -963,7 +963,7 @@ function SV1_r18_2(Ld, vmag)
         dVsh = Vth - V
         if dVsh > eps_v
             # printstyled("There is a voltage vioaltion load $(Ld[k, 14]), {$V}:"; color=:blue, blink=true)
-            println()
+            # println()
             Ld = shedv_r18_2(Ld, dVsh, k)
             # Ld = shedv2(Ld, dVsh, k)
             # Ld = shedv2(Ld, dVsh, k)
@@ -993,7 +993,7 @@ function SV2_r18_2(Ld, vmag, CBId)
         dVsh = Vth - V[1]
         if dVsh > eps_v
             # printstyled("There is a voltage vioaltion load $(Ld[k, 14]), {$V}:"; color=:blue, blink=true)
-            println()
+            # println()
             Ld = shedv_r18_2(Ld, dVsh, k)
         else
             i += 1
@@ -1047,8 +1047,8 @@ function SV4_r18_2(Ld, vmag, CBId, Gcas)
         k = findall3(x -> x == priority[i], CBId)
         # k = findall3(x -> x == priority[i], vmag)
 
-        printstyled("Voltage ofload $(Ld[k, 14]) is $(vmag[k])}:"; color=:blue, blink=true)
-        println()
+        # printstyled("Voltage ofload $(Ld[k, 14]) is $(vmag[k])}:"; color=:blue, blink=true)
+        # println()
         Ld = shedv_r18_2(Ld, dVsh, k)
     end
 
@@ -4243,7 +4243,7 @@ function find_ones(M::SparseMatrixCSC{Int64,Int64})
 end
 
 
-function line_flow2(L, y_bus, V, del)
+function line_flow2(L, y_bus, V, del;cutlimit=1.0)
     fb = L[:, 1]
     tb = L[:, 2]
     g = L[:, 3]
@@ -4305,7 +4305,7 @@ function line_flow2(L, y_bus, V, del)
 
     percentIij = Iij./Imax
     # violated_lines = findall3(x -> x >= 1, sij)
-    violated_lines = findall3(x -> x >= 1, percentIij)
+    violated_lines = findall3(x -> x >= cutlimit, percentIij)
     # ploss = sum(ploss_ij) + sum(ploss_ij_T)
     return sij, violated_lines, Iij, percentIij
 end

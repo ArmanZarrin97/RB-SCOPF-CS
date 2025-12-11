@@ -1,4 +1,4 @@
-function DA_OPF(;LinMethod="None",OP_init=Dict{String,Any}(),init__="Zero") #Array{Union{Float64,Array{Float64}}}
+function DA_OPF(LinMethod="None",OP_init=Dict{String,Any}(),init__="Zero") #Array{Union{Float64,Array{Float64}}}
     # LinMethod="None";OP_init=Dict{String,Any}()
     Ptype_="DA";init_=init__;
     global nTP=nTL;
@@ -57,7 +57,7 @@ function DA_OPF(;LinMethod="None",OP_init=Dict{String,Any}(),init__="Zero") #Arr
     return OPFout,SCOPF
 end
 
-function DA_SCOPF(;LinMethod="None",OP_init=Dict{String,Any}(),init__="Zero",relaxconfac=0.0) #Array{Union{Float64,Array{Float64}}}
+function DA_SCOPF(casreps;LinMethod="None",OP_init=Dict{String,Any}(),init__="Zero",relaxconfac=0.0) #Array{Union{Float64,Array{Float64}}}
 
     #init__="Zero";LinMethod="None";OP_init=Dict{String,Array{Union{Float64,Array{Float64}}}}()
     Ptype_="DA";init_=init__;
@@ -102,7 +102,7 @@ function DA_SCOPF(;LinMethod="None",OP_init=Dict{String,Any}(),init__="Zero",rel
 
     Proffin=Load_Data(nTP,raw,profraw,ctdall) # Prepare Load and Shunt data and generation setpoints
     SCOPF,N_Var,C_Var=try
-        L_MPSCOPF(glob_input,Proffin;conprob=conprob_,LinMethod=LinMethod,Lininit=OP_init,relaxconfac=relaxconfac);
+        L_MPSCOPF(glob_input,Proffin,casreps;conprob=conprob_,LinMethod=LinMethod,Lininit=OP_init,relaxconfac=relaxconfac);
         # conprob=conprob_;LinMethod=LinMethod;Lininit=OP_init
     catch e
         @warn "Error in MPSCOPF function: $e"

@@ -223,7 +223,13 @@ elseif LinMethod=="SENS"
         @expression(SCOPF,cost_TR_PenC, 0)
         @expression(SCOPF,cost_TR_relaxC, 0)
     end
-    @objective(SCOPF, Min,  real_objective +cost_TR_relaxN+cost_TR_PenN+cost_TR_relaxC+ lambda*singleconprob*cost_TR_PenC)
+    if haskey(SCOPF.obj_dict,:CNcascade_LP)
+        cascade_penalty=sum(SCOPF[:slack_Cascade_LP]).*coef4
+        @expression(SCOPF,cascade_penalty, cascade_penalty)
+    else
+        @expression(SCOPF,cascade_penalty, 0.0)
+    end
+    @objective(SCOPF, Min,  real_objective +cost_TR_relaxN+cost_TR_PenN+cost_TR_relaxC+ lambda*singleconprob*(cost_TR_PenC+cascade_penalty))
     # @objective(SCOPF, Min,  0)
 end
 # @objective(SCOPF, Min,  0)
@@ -755,6 +761,41 @@ function Contingency_L_PB( SCOPF::Model,nTP::Int64,raw::Dict{String, Any},initra
     C_Var= PG_c_Line,QG_c_Line,P_ch_c_Line,P_dis_c_Line,P_inc_c_Line,P_dec_c_Line,shed_c_Line,curt_c_Line,curtc_c_Line,Vars,Parlist,(maxActive_g,minActive_g,maxReactive_g,minReactive_g)
     return SCOPF,C_Var
 end
+
+
+function Cascade_L_PB( SCOPF::Model,nTP::Int64,raw::Dict{String, Any},casreps::Matrix{DataFrame},Lininit::Dict{String, Any} )
+    ϵ_vm=1e-4
+    Imaxlimit0=(raw["Line"]."RATE_A") .^ 2
+    SENS_Cascade=zeros(Float64,0,raw["nPActBus"]+raw["nQActBus"])
+    Vm_Cascade=zeros(Float64,0,1)
+    line_Cascade=zeros(Int64,0,1)
+    t_Cascade=zeros(Int64,0,1)
+    for t in 1:nTP
+        probinst=findall(x-> size(x,1)>1, casreps[t,:])
+        for c in probinst
+            lineind=casreps[t,c][1,"LL"]
+            VM=casreps[t,c][1,"VM"]
+            t_Cascade=vcat(t_Cascade,repeat([t],length(lineind)))
+            Vm_Cascade=vcat(Vm_Cascade,VM)
+            line_Cascade=vcat(line_Cascade,lineind)
+            Jcbs=casreps[t,c][1,"Jcbs"]
+            Sens_temp=Cal_SENS_Cascade(Jcbs,lineind,t,raw,Lininit)
+            SENS_Cascade=vcat(SENS_Cascade,Sens_temp)
+        end
+    end
+    ΔPinj=SCOPF[:ΔPinjP]-SCOPF[:ΔPinjN]
+    ΔQinj=SCOPF[:ΔQinjP] -SCOPF[:ΔQinjN]
+    diffVm= Vm_Cascade.^2 .-I_relax.^2 .+ϵ_vm
+    @variable(SCOPF, 0 <= slack_Cascade_LP[k=1:length(line_Cascade)] <= 1)
+
+    #diffVm[k]
+    # @constraint(SCOPF, CNcascade_LP[k=1:length(line_Cascade)], (SENS_Cascade[k,:])'*[ΔPinj ΔQinj][t_Cascade[k],:] <= (-diffVm[k]*diffVm[k] + slack_Cascade_LP[k])*Imaxlimit0[line_Cascade[k]])
+    @constraint(SCOPF, CNcascade_LP[k=1:length(line_Cascade)], (SENS_Cascade[k,:])'*[ΔPinj ΔQinj][t_Cascade[k],:] <= (-diffVm[k])*Imaxlimit0[line_Cascade[k]]* (1 - slack_Cascade_LP[k]) )
+    CascadeInfo=Dict("diffVm"=>diffVm,"t_Cascade"=>t_Cascade, "SENS_Cascade"=>SENS_Cascade, "line_Cascade"=>line_Cascade)
+
+    return SCOPF,CascadeInfo
+end
+
 
 function find_ramp_rate_violations(Lininit,raw,OPFon)
     if size(Lininit["PG"],1)>1
