@@ -53,7 +53,7 @@ function total_i(B, L, T, G, Ld, Shu, REN, BAT, Gcas)
         bi = u[i]
         bi = sort(bi)
         # push!(__r["buses"], bi)
-        (G, Ld, flag, Gcas) = csc_i(bi, G, Ld, Gcas);
+        (G, Ld, BAT, REN,flag, Gcas) = csc_i(bi, G, Ld, BAT, REN, Gcas);
         if Gcas.print
             printstyled("- island#$i, flag=$flag, {$bi}:"; color=:blue, blink=true)
             println()
@@ -65,7 +65,7 @@ function total_i(B, L, T, G, Ld, Shu, REN, BAT, Gcas)
             end
         end
         if flag == 0
-           (r_i, B, L, T, G, Ld, Shu, blkout, Jcb, Gcas) = csc_ii(bi, B, L, T, G, Ld, Shu, REN, BAT, y_bus, A, Gcas);
+           (r_i, B, L, T, G, Ld, Shu, REN, BAT, blkout, Jcb, Gcas) = csc_ii(bi, B, L, T, G, Ld, Shu, REN, BAT, y_bus, A, Gcas);
             # push!(__r["Jcb"], Jcb);push!(__r["S0"], r_i["sij_i"]);push!(__r["vio_i"], r_i["vio_i"])
             # push!(__r["LNS_f"], r_i["LNS_f"]);push!(__r["LNS_v"], r_i["LNS_v"])
             if blkout == 0

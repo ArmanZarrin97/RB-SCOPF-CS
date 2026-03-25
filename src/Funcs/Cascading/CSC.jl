@@ -2,9 +2,10 @@
 
 function CSC(B::DataFrame, L::DataFrame, T::DataFrame, G::DataFrame, Ld::DataFrame, Shu::DataFrame, REN::DataFrame, BAT::DataFrame, Lout::Vector{Int64},Gcas)
     # B, L, T, G, Ld, Shu, Lout=Bs, Ls, Ts, Gs, Lds, Shus, Lout
-    casrep=DataFrame(Stage=[], LL=[],VM=[], LNS_V=[], LNS_F=[], LNS_T=[], Jcbs=[])
+    casrep=DataFrame(Stage=[], LL=[],VM=[], LNS_V=[], LNS_F=[], LNS_T=[], Jcbs=[],busset=[],LNSset=[], Vmag=[], Vang=[])
     Rn = []
     Lvio = []
+    convergence=0
     Lvio_stage = []
     Lvio_tot = []
     H = 1
@@ -32,12 +33,13 @@ function CSC(B::DataFrame, L::DataFrame, T::DataFrame, G::DataFrame, Ld::DataFra
             main_name_L = r[i]["Line_i"]
             Lvio_stage = r[i]["vio_i"]
             Lvio = main_name_L[r[i]["vio_i"]]
+            convergence= r[i]["cg_i"]
         end
         push!(Rn, r)
         push!(JCB, Jcb)
         push!(Line_vio, Lvio)
 
-
+        LNSset=Gcas.Ldsh_f.+Gcas.Ldsh_v
         LNS_f = sum(Gcas.Ldsh_f) 
         LNS_v = sum(Gcas.Ldsh_v) 
         LNS = LNS_f + LNS_v
@@ -47,11 +49,23 @@ function CSC(B::DataFrame, L::DataFrame, T::DataFrame, G::DataFrame, Ld::DataFra
         # notLres=findall( in(Set(Lvio)),L."Line_N")
 
         push!(LNS_stage, LNS)
-        push!(casrep,[H-1 [Lvio] [r[n_i]["percentIij"][Lvio_stage]] LNS_v LNS_f LNS [Jcb]])
+        # push!(casrep,[H-1 [Lvio] [if n_i==0; [] else r[n_i]["percentIij"][Lvio_stage] end] LNS_v LNS_f LNS [Jcb] [if n_i==0; [] else r[n_i]["Bus_i"] end] [LNSset] [if n_i==0; [] else r[n_i]["vmag_i"] end] [if n_i==0; [] else r[n_i]["vang_i"] end]])
+        if n_i==0 || convergence==0
+            LNS= sum(Ld[:,2])
+            push!(casrep,[H-1 [Lvio] [[]] LNS_v LNS_f LNS [Jcb] [[]] [LNSset] [[]] [[]]])
+            if Gcas.print
+                printstyled("No Powerflow solution"; color=:10, blink=true)
+            end
+            break
+        else
+            push!(casrep,[H-1 [Lvio] [r[n_i]["percentIij"][Lvio_stage]] LNS_v LNS_f LNS [Jcb] [r[n_i]["Bus_i"]] [LNSset] [r[n_i]["vmag_i"]] [r[n_i]["vang_i"]]])
+        end
+        # push!(casrep,[H-1 [Lvio] [r[n_i]["percentIij"][Lvio_stage]] LNS_v LNS_f LNS [Jcb] [r[n_i]["Bus_i"]] [LNSset] [r[n_i]["vmag_i"]] [r[n_i]["vang_i"]]])
 
+        
         line_viol = length(Lvio)
 
-        if line_viol != 0
+        if line_viol != 0 && n_i !=0
             if Gcas.print 
                 printstyled("NEW line violation is observed!"; color=:1, blink=true)
             end
@@ -72,8 +86,13 @@ function CSC(B::DataFrame, L::DataFrame, T::DataFrame, G::DataFrame, Ld::DataFra
                 printstyled("NO line violation is observed"; color=:10, blink=true)
             end
             break
+        else 
+            if Gcas.print
+                printstyled("No Powerflow solution"; color=:10, blink=true)
+            end
+            break
         end
-
+ 
         H += 1
     end
 

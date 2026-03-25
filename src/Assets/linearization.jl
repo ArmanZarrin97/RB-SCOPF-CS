@@ -1,4 +1,5 @@
-function Initialize(type_,out,init_model,DA_out,DA_model)
+function Initialize(Glob,type_,out,init_model,DA_out,DA_model)
+
     #type_,out=Linearization_INIT[Runcode[1]],init_out
     V_1,θ_1,PG_1,QG_1,cost1=sqrt.(value.(init_model[:f]).^2 + value.(init_model[:e]).^2) ,atan.(value.(init_model[:f]),value.(init_model[:e])),value.(init_model[:PG]),value.(init_model[:QG]),out."OFValue_WP"[1]
     shed_1,curt_1,curtc_1=value.(init_model[:shed]),value.(init_model[:curt]),value.(init_model[:curtc])
@@ -10,21 +11,21 @@ function Initialize(type_,out,init_model,DA_out,DA_model)
         Pinc_c_Line_1,Pdec_c_Line_1,Pch_c_Line_1,Pdis_c_Line_1=value.(init_model[:P_inc_c_Line]),value.(init_model[:P_dec_c_Line]),value.(init_model[:P_ch_c_Line]),value.(init_model[:P_dis_c_Line])
     end
     if type_=="Flat"
-        V_0=ones(nTL,size(SysData["Bus"],1));V_c_Line_0=ones(nTL,size(SysData["Bus"],1),size(SysData["ConL"],1));
-        θ_0=zeros(nTL,size(SysData["Bus"],1));θ_c_Line_0=zeros(nTL,size(SysData["Bus"],1),size(SysData["ConL"],1));
-        PG_0=zeros(nTL,size(SysData["Gen"],1));PG_c_Line_0=zeros(nTL,size(SysData["Gen"],1),size(SysData["ConL"],1));
-        QG_0=zeros(nTL,size(SysData["Gen"],1));QG_c_Line_0=zeros(nTL,size(SysData["Gen"],1),size(SysData["ConL"],1));
-        shed_c_Line_0=zeros(nTL,size(SysData["Load"],1),size(SysData["ConL"],1));curt_c_Line_0=zeros(nTL,size(SysData["RES"],1),size(SysData["ConL"],1));curtc_c_Line_0=zeros(nTL,size(SysData["Gen"],1),size(SysData["ConL"],1));
-        Pinc_c_Line_0=zeros(nTL,size(SysData["FL"],1),size(SysData["ConL"],1));Pdec_c_Line_0=zeros(nTL,size(SysData["FL"],1),size(SysData["ConL"],1));Pch_c_Line_0=zeros(nTL,size(SysData["ESS"],1),size(SysData["ConL"],1));Pdis_c_Line_0=zeros(nTL,size(SysData["ESS"],1),size(SysData["ConL"],1));
-        shed_0=zeros(nTL,size(SysData["Load"],1));curt_0=zeros(nTL,size(SysData["RES"],1));curtc_0=zeros(nTL,size(SysData["Gen"],1));
-        Pinc_0=zeros(nTL,size(SysData["FL"],1));Pdec_0=zeros(nTL,size(SysData["FL"],1));Pch_0=zeros(nTL,size(SysData["ESS"],1));Pdis_0=zeros(nTL,size(SysData["ESS"],1));
-        UE_0=zeros(nTL,size(SysData["FL"],1));soc_0=zeros(nTL,size(SysData["ESS"],1));
-        for t in 1:nTL, cl in SysData["ConL"]."cont"
-            PG_0[t,:].=(SysData["Gen"]."P_max (pu)"+SysData["Gen"]."P_min (pu)")./2
-            QG_0[t,:].=(SysData["Gen"]."Q_max (pu)"+SysData["Gen"]."Q_min (pu)")./2
+        V_0=ones(nTL,size(Glob["SysData"]["Bus"],1));V_c_Line_0=ones(nTL,size(Glob["SysData"]["Bus"],1),size(Glob["SysData"]["ConL"],1));
+        θ_0=zeros(nTL,size(Glob["SysData"]["Bus"],1));θ_c_Line_0=zeros(nTL,size(Glob["SysData"]["Bus"],1),size(Glob["SysData"]["ConL"],1));
+        PG_0=zeros(nTL,size(Glob["SysData"]["Gen"],1));PG_c_Line_0=zeros(nTL,size(Glob["SysData"]["Gen"],1),size(Glob["SysData"]["ConL"],1));
+        QG_0=zeros(nTL,size(Glob["SysData"]["Gen"],1));QG_c_Line_0=zeros(nTL,size(Glob["SysData"]["Gen"],1),size(Glob["SysData"]["ConL"],1));
+        shed_c_Line_0=zeros(nTL,size(Glob["SysData"]["Load"],1),size(Glob["SysData"]["ConL"],1));curt_c_Line_0=zeros(nTL,size(Glob["SysData"]["RES"],1),size(Glob["SysData"]["ConL"],1));curtc_c_Line_0=zeros(nTL,size(Glob["SysData"]["Gen"],1),size(Glob["SysData"]["ConL"],1));
+        Pinc_c_Line_0=zeros(nTL,size(Glob["SysData"]["FL"],1),size(Glob["SysData"]["ConL"],1));Pdec_c_Line_0=zeros(nTL,size(Glob["SysData"]["FL"],1),size(Glob["SysData"]["ConL"],1));Pch_c_Line_0=zeros(nTL,size(Glob["SysData"]["ESS"],1),size(Glob["SysData"]["ConL"],1));Pdis_c_Line_0=zeros(nTL,size(Glob["SysData"]["ESS"],1),size(Glob["SysData"]["ConL"],1));
+        shed_0=zeros(nTL,size(Glob["SysData"]["Load"],1));curt_0=zeros(nTL,size(Glob["SysData"]["RES"],1));curtc_0=zeros(nTL,size(Glob["SysData"]["Gen"],1));
+        Pinc_0=zeros(nTL,size(Glob["SysData"]["FL"],1));Pdec_0=zeros(nTL,size(Glob["SysData"]["FL"],1));Pch_0=zeros(nTL,size(Glob["SysData"]["ESS"],1));Pdis_0=zeros(nTL,size(Glob["SysData"]["ESS"],1));
+        UE_0=zeros(nTL,size(Glob["SysData"]["FL"],1));soc_0=zeros(nTL,size(Glob["SysData"]["ESS"],1));
+        for t in 1:nTL, cl in Glob["SysData"]["ConL"]."cont"
+            PG_0[t,:].=(Glob["SysData"]["Gen"]."P_max (pu)"+Glob["SysData"]["Gen"]."P_min (pu)")./2
+            QG_0[t,:].=(Glob["SysData"]["Gen"]."Q_max (pu)"+Glob["SysData"]["Gen"]."Q_min (pu)")./2
             if Problem_Type in ["SCOPF", "RBOPF"]
-                PG_c_Line_0[t,:,cl].=(SysData["Gen"]."P_max (pu)"+SysData["Gen"]."P_min (pu)")./2
-                QG_c_Line_0[t,:,cl].=(SysData["Gen"]."Q_max (pu)"+SysData["Gen"]."Q_min (pu)")./2
+                PG_c_Line_0[t,:,cl].=(Glob["SysData"]["Gen"]."P_max (pu)"+Glob["SysData"]["Gen"]."P_min (pu)")./2
+                QG_c_Line_0[t,:,cl].=(Glob["SysData"]["Gen"]."Q_max (pu)"+Glob["SysData"]["Gen"]."Q_min (pu)")./2
             end
         end
         obj=0
@@ -57,7 +58,7 @@ function Initialize(type_,out,init_model,DA_out,DA_model)
         obj=value(DA_model[type_][:real_objective])
         obj_WP=DA_out[type_]."OFValue_WP"[1]
         sol_time=solve_time(DA_model[type_])
-        # ods_write(Path*"../Result/LIN_Sum_"*Problem_Type,Dict(("General",20,1)=>DataFrame(["-" "Non-Linear" 0 1 0 0 cost PG_0 QG_0 V_0 θ_0],   ["Initialization";"Method";"Runcode";"Iter";"OptGap";"MinInfIns";"Obj";["PG$i" for i in 1:size(SysData["Gen"],1)];["QG$i" for i in 1:size(SysData["Gen"],1)];["V$i" for i in 1:size(SysData["Bus"],1)];["θ$i" for i in 1:size(SysData["Bus"],1)]])))
+        # ods_write(Path*"../Result/LIN_Sum_"*Problem_Type,Dict(("General",20,1)=>DataFrame(["-" "Non-Linear" 0 1 0 0 cost PG_0 QG_0 V_0 θ_0],   ["Initialization";"Method";"Runcode";"Iter";"OptGap";"MinInfIns";"Obj";["PG$i" for i in 1:size(Glob["SysData"]["Gen"],1)];["QG$i" for i in 1:size(Glob["SysData"]["Gen"],1)];["V$i" for i in 1:size(Glob["SysData"]["Bus"],1)];["θ$i" for i in 1:size(Glob["SysData"]["Bus"],1)]])))
     end 
     Lin_init=Dict{String,Any}() #Union{Float64,Array{Union{Float64,Array{Float64}}}}
     Lin_init["V"]=V_0;Lin_init["θ"]=θ_0;Lin_init["PG"]=PG_0;Lin_init["QG"]=QG_0;
@@ -69,9 +70,9 @@ function Initialize(type_,out,init_model,DA_out,DA_model)
         Lin_init["Pshed_c_Line"]=shed_c_Line_0;Lin_init["Pcurt_c_Line"]=curt_c_Line_0;Lin_init["Pcurtc_c_Line"]=curtc_c_Line_0;
         Lin_init["Pinc_c_Line"]=Pinc_c_Line_0;Lin_init["Pdec_c_Line"]=Pdec_c_Line_0;Lin_init["Pch_c_Line"]=Pch_c_Line_0;Lin_init["Pdis_c_Line"]=Pdis_c_Line_0;
     end
-    Lin_init["TR"]=Adaptive_TR[1]
-    Lin_init["TRB"]=[Adaptive_TRB[1]]
-    Lin_init["FilterIndex"]=[filter_factor[1]]
+    Lin_init["TR"]=Glob["Adaptive_TR"][1]
+    Lin_init["TRB"]=[Glob["Adaptive_TRB"][1]]
+    Lin_init["FilterIndex"]=[Glob["filter_factor"][1]]
     Lin_init["warmstart_yang"]=[0.0]
     Lin_init["obj"]=obj
     Lin_init["obj_WP"]=obj_WP
@@ -79,14 +80,15 @@ function Initialize(type_,out,init_model,DA_out,DA_model)
     return Lin_init
 end
 
-function Optimizer(LinMethod,OP_init,casreps=nothing)
-    # LinMethod=Linearization_TYPE[Runcode[2]];casreps=nothing
+function Optimizer(Glob, LinMethod,OP_init,casreps=nothing,h_cas=DataFrame())
+    # casreps=nothing
+    # LinMethod=Linearization_TYPE[Runcode[2]];
     OP=Dict{String,Any}()
     if Problem_Type=="OPF"
         out,model=DA_OPF(LinMethod=LinMethod,OP_init=OP_init)
     elseif Problem_Type in ["SCOPF", "RBOPF"]
         if Problem_Type == "RBOPF" relaxconfac=0.2 else relaxconfac=0.0 end
-        out,model= DA_SCOPF(casreps;LinMethod=LinMethod,OP_init=OP_init,relaxconfac=relaxconfac)
+        out,model= DA_SCOPF(Glob, casreps,h_cas;LinMethod=LinMethod,OP_init=OP_init,relaxconfac=relaxconfac)
         OP["V_c_Line"]=sqrt.(value.(model[:CV2magexp])) ;OP["θ_c_Line"]=value.(model[:Cθexp]);OP["PG_c_Line"]=value.(model[:PG_c_Line]);OP["QG_c_Line"]=value.(model[:QG_c_Line])
         OP["Pshed_c_Line"]=value.(model[:shed_c_Line]);OP["Pcurt_c_Line"]=value.(model[:curt_c_Line]);OP["Pcurtc_c_Line"]=value.(model[:curtc_c_Line])
         OP["Pinc_c_Line"]=value.(model[:P_inc_c_Line]);OP["Pdec_c_Line"]=value.(model[:P_dec_c_Line]);OP["Pch_c_Line"]=value.(model[:P_ch_c_Line]);OP["Pdis_c_Line"]=value.(model[:P_dis_c_Line])
@@ -107,32 +109,34 @@ function Optimizer(LinMethod,OP_init,casreps=nothing)
     return OP,out,model
 end
 
-function fix_FL!(OP)
+function fix_FL!(OP,Glob)
   #  OP=OP_init
-    Prof=Profile_Data[Ptype_]
+    Inc_coef=Glob["Inc_coef"]
+    Dec_coef=Glob["Dec_coef"]
+    Prof=Glob["Profile_Data"][Ptype_]
     for i in eachindex(OP["Pinc"]) 
-        if OP["Pinc"][i]>(Inc_coef*(Matrix(Prof["PL"])*(SysData["Load"]."Pd (pu)")'))[:,SysData["FL"]."D_N"][i]
-            OP["Pinc"][i]=(Inc_coef*(Matrix(Prof["PL"])*(SysData["Load"]."Pd (pu)")'))[:,SysData["FL"]."D_N"][i]
+        if OP["Pinc"][i]>(Inc_coef*(Matrix(Prof["PL"])*(Glob["SysData"]["Load"]."Pd (pu)")'))[:,Glob["SysData"]["FL"]."D_N"][i]
+            OP["Pinc"][i]=(Inc_coef*(Matrix(Prof["PL"])*(Glob["SysData"]["Load"]."Pd (pu)")'))[:,Glob["SysData"]["FL"]."D_N"][i]
         end
-        if OP["Pdec"][i]>(Dec_coef*(Matrix(Prof["PL"])*(SysData["Load"]."Pd (pu)")'))[:,SysData["FL"]."D_N"][i]
-            OP["Pdec"][i]=(Dec_coef*(Matrix(Prof["PL"])*(SysData["Load"]."Pd (pu)")'))[:,SysData["FL"]."D_N"][i]
+        if OP["Pdec"][i]>(Dec_coef*(Matrix(Prof["PL"])*(Glob["SysData"]["Load"]."Pd (pu)")'))[:,Glob["SysData"]["FL"]."D_N"][i]
+            OP["Pdec"][i]=(Dec_coef*(Matrix(Prof["PL"])*(Glob["SysData"]["Load"]."Pd (pu)")'))[:,Glob["SysData"]["FL"]."D_N"][i]
         end
     end
     if Problem_Type in ["SCOPF", "RBOPF"]    
         si=size(OP["Pinc_c_Line"])
         for t=1:si[1],i=1:si[2],c=1:si[3]
-            if OP["Pinc_c_Line"][t,i,c]>(Inc_coef*(Matrix(Prof["PL"])*(SysData["Load"]."Pd (pu)")'))[:,SysData["FL"]."D_N"][t,i]
-                OP["Pinc_c_Line"][t,i,c]=(Inc_coef*(Matrix(Prof["PL"])*(SysData["Load"]."Pd (pu)")'))[:,SysData["FL"]."D_N"][t,i]
+            if OP["Pinc_c_Line"][t,i,c]>(Inc_coef*(Matrix(Prof["PL"])*(Glob["SysData"]["Load"]."Pd (pu)")'))[:,Glob["SysData"]["FL"]."D_N"][t,i]
+                OP["Pinc_c_Line"][t,i,c]=(Inc_coef*(Matrix(Prof["PL"])*(Glob["SysData"]["Load"]."Pd (pu)")'))[:,Glob["SysData"]["FL"]."D_N"][t,i]
             end
-            if OP["Pdec_c_Line"][t,i,c]>(Dec_coef*(Matrix(Prof["PL"])*(SysData["Load"]."Pd (pu)")'))[:,SysData["FL"]."D_N"][t,i]
-                OP["Pdec_c_Line"][t,i,c]=(Dec_coef*(Matrix(Prof["PL"])*(SysData["Load"]."Pd (pu)")'))[:,SysData["FL"]."D_N"][t,i]
+            if OP["Pdec_c_Line"][t,i,c]>(Dec_coef*(Matrix(Prof["PL"])*(Glob["SysData"]["Load"]."Pd (pu)")'))[:,Glob["SysData"]["FL"]."D_N"][t,i]
+                OP["Pdec_c_Line"][t,i,c]=(Dec_coef*(Matrix(Prof["PL"])*(Glob["SysData"]["Load"]."Pd (pu)")'))[:,Glob["SysData"]["FL"]."D_N"][t,i]
             end
         end
     end
     return OP
 end
 
-function Prepare_Dataset(OP::Dict{String,Any},TSysData::Dict{String, DataFrame},t;i=0,C="N",I_relax=1) #Array{Union{Float64,Array{Float64}}}
+function Prepare_Dataset(Glob, OP::Dict{String,Any},TSysData::Dict{String, DataFrame},t;i=0,C="N",I_relax=1) #Array{Union{Float64,Array{Float64}}}
     # OP=OP_NValid
     # OP=OP_Valid
     NSysData=deepcopy(TSysData)
@@ -142,7 +146,7 @@ function Prepare_Dataset(OP::Dict{String,Any},TSysData::Dict{String, DataFrame},
     NSysData["Line"]=NSysData["Line"][NSysData["Line"]."br_status".==1,:]
     NSysData["ESS"]=NSysData["ESS"][NSysData["ESS"]."br_status".==1,:]
     NSysData["Trans"]=NSysData["Trans"][NSysData["Trans"]."br_status".==1,:]
-    Prof=Profile_Data[Ptype_]
+    Prof=Glob["Profile_Data"][Ptype_]
 
     NSysData["RES"]."PG"=convert.(Float64,NSysData["RES"]."PG")
     NSysData["ESS"]."PG"=convert.(Float64,NSysData["ESS"]."PG")
@@ -152,7 +156,7 @@ function Prepare_Dataset(OP::Dict{String,Any},TSysData::Dict{String, DataFrame},
 
     if C=="N"
         NSysData["Gen"]."Pg (pu)".=     OP["PG"][t,:];NSysData["Gen"]."Qg (pu)".=OP["QG"][t,:];
-        NSysData["Gen"]."V_set (pu)".=  OP["V"][t,:][SysData["Gen"]."Bus"];
+        NSysData["Gen"]."V_set (pu)".=  OP["V"][t,:][Glob["SysData"]["Gen"]."Bus"];
         ### to respect ramp rate
         # ramp=NSysData["Gen"]."Ramp".*Td
         # if t!=1
@@ -182,7 +186,7 @@ function Prepare_Dataset(OP::Dict{String,Any},TSysData::Dict{String, DataFrame},
         NSysData["Line"]=NSysData["Line"][Not(line_outage),:]
 
         NSysData["Gen"]."Pg (pu)".=     OP["PG_c_Line"][t,:,i];NSysData["Gen"]."Qg (pu)".=OP["QG_c_Line"][t,:,i];
-        NSysData["Gen"]."V_set (pu)".=  OP["V_c_Line"][t,:,i][SysData["Gen"]."Bus"];
+        NSysData["Gen"]."V_set (pu)".=  OP["V_c_Line"][t,:,i][Glob["SysData"]["Gen"]."Bus"];
 
         # ### to respect ramp rate
         # ramp=NSysData["Gen"]."Ramp".*CCT
@@ -211,7 +215,7 @@ function Prepare_Dataset(OP::Dict{String,Any},TSysData::Dict{String, DataFrame},
         NSysData["Line"]."RATE_A"*=I_relax
 
         NSysData["Gen"]."Pg (pu)".=     OP["PG"][t,:];NSysData["Gen"]."Qg (pu)".=OP["QG"][t,:];
-        NSysData["Gen"]."V_set (pu)".=  OP["V"][t,:][SysData["Gen"]."Bus"];
+        NSysData["Gen"]."V_set (pu)".=  OP["V"][t,:][Glob["SysData"]["Gen"]."Bus"];
 
         if isempty(OP["Pshed"]) Shed=   OP["Pshed"] else Shed=OP["Pshed"][t,:] end;
         if isempty(OP["Pcurt"]) Curt=   OP["Pcurt"] else Curt=OP["Pcurt"][t,:] end;
@@ -222,7 +226,7 @@ function Prepare_Dataset(OP::Dict{String,Any},TSysData::Dict{String, DataFrame},
         if isempty(OP["Pdec"])  Pdec=   OP["Pdec"]  else Pdec=OP["Pdec"][t,:] end;
     end
 
-    if !isempty(Pinc) NSysData["Load"]."Pd (pu)"[SysData["FL"]."D_N"].+= ((Pinc)+ (Pdec*-1)) end;
+    if !isempty(Pinc) NSysData["Load"]."Pd (pu)"[Glob["SysData"]["FL"]."D_N"].+= ((Pinc)+ (Pdec*-1)) end;
     if !isempty(Pdis) NSysData["ESS"]."PG".= Pdis+ (-1* Pch) end;
     if !isempty(Curt) NSysData["RES"]."PG".+= (-1*Curt); end
     if !isempty(Shed) NSysData["Load"]."Pd (pu)".+= -1*Shed; end
@@ -231,8 +235,8 @@ function Prepare_Dataset(OP::Dict{String,Any},TSysData::Dict{String, DataFrame},
 
     return NSysData
 end
-function pre_prepration!(OP,NSysData;nCon=0,nT=0,C="N")
-    Prof=Profile_Data[Ptype_]
+function pre_prepration!(Glob,OP,NSysData;nCon=0,nT=0,C="N")
+    Prof=Glob["Profile_Data"][Ptype_]
     if !isempty(Prof["Wind"])  Ren_T= (Matrix(Prof["Wind"])*(NSysData["RES"]."Cap")') end;
     if !isempty(Prof["PL"])  Ld_T= (Matrix(Prof["PL"])*(NSysData["Load"]."Pd (pu)")') end;
     for t=1:nT
@@ -328,7 +332,7 @@ function SLA(Runcode,OP_init0,init_model,init_out;BItermax=4)
         V_c_Line_1,θ_c_Line_1,PG_c_Line_1,QG_c_Line_1=sqrt.(value.(init_model[:e_c_Line].^2 +init_model[:f_c_Line].^2)),atan.(value.(init_model[:f_c_Line]),value.(init_model[:e_c_Line])),value.(init_model[:PG_c_Line]),value.(init_model[:QG_c_Line])
     end
     if FullReport==1
-        Head=["Initialization";"Method";"Runcode";"Time";"Res_Time";"Iter";"TR";"TRB";"OptGap";"Max_Inf_N";"Max_Inf_C";"Optimizer_Obj";"real_Obj";["PG$i" for i in 1:size(SysData["Gen"],1)];["QG$i" for i in 1:size(SysData["Gen"],1)];["V$i" for i in 1:size(SysData["Bus"],1)];["θ$i" for i in 1:size(SysData["Bus"],1)]]
+        Head=["Initialization";"Method";"Runcode";"Time";"Res_Time";"Iter";"TR";"TRB";"OptGap";"Max_Inf_N";"Max_Inf_C";"Optimizer_Obj";"real_Obj";["PG$i" for i in 1:size(Glob["SysData"]["Gen"],1)];["QG$i" for i in 1:size(Glob["SysData"]["Gen"],1)];["V$i" for i in 1:size(Glob["SysData"]["Bus"],1)];["θ$i" for i in 1:size(Glob["SysData"]["Bus"],1)]]
         Iter_Rep=DataFrame(repeat([[]],length(Head)), Head)
         #------------------- Print Optimal point and first iteration
         newrow=["-" "Non-Linear" 0 solve_time(init_model) 0 1 0 0 0 0 0 cost1 "-" PG_1 QG_1 V_1 θ_1]
@@ -497,20 +501,24 @@ function SLA(Runcode,OP_init0,init_model,init_out;BItermax=4)
     return mincost,Best_solution,Best_Iter,min_infmax_N,min_infmax_C,minOptGap,Best_vio_general_N,Best_vio_sum_N,Best_vio_general_C,Best_vio_sum_C,Best_sol_time,Best_res_time
 end
 
-function SLA_clean(Runcode,OP_init0,OP_NLP;BItermax=4)
+function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
     #BItermax=1;
+    # relaxpermit= Glob["relaxpermit"]
     iter=0;BIter=0;sol_time=0;res_time=0;Best_Iter=0;Best_sol_time=0;Best_res_time=0;LNSs=0;
     #----------------------------Check initial operating point -------------------------------------------
     Ncost0,Vio_Sum_N0,Vio_general_N0,AVG_C_cost0,Vio_Sum_C0,OP_init0V,Vio_general_C0,min_infmax_C,casreps0,casreps_NLP=0,0,0,0,0,0,0,0,0,0
+    # casreps0[8,1]
+    # Vio_general_C0[1,33]
     try
-        Ncost0,Vio_Sum_N0,Vio_general_N0,AVG_C_cost0,Vio_Sum_C0,OP_init0V,Vio_general_C0,casreps0=AC_PFCheck(OP_init0,Runcode);
+        Ncost0,Vio_Sum_N0,Vio_general_N0,AVG_C_cost0,Vio_Sum_C0,OP_init0V,Vio_general_C0,casreps0,a8=AC_PFCheck(OP_init0,Glob);
 
-        a0,a1,a2,a3,a4,a5,a6,casreps_NLP=AC_PFCheck(OP_NLP,Runcode);
+        a0,a1,a2,a3,a4,a5,a6,casreps_NLP,a7=AC_PFCheck(OP_NLP,Glob);
 
 
-        # LNSs=[casreps[t,i][end,"LNS_T"] for t in 1:nTL, i in 1:size(SysData["ConL"],1)]
-        # findall(x-> size(x,1)>1, casreps)
-        # casreps[1,5]
+        # LNSs=[casreps[t,i][end,"LNS_T"] for t in 1:nTL, i in 1:size(Glob["SysData"]["ConL"],1)]
+        # findall(x-> size(x,1)>1, casreps0)
+        # casreps0[21,5]
+        # casreps0[21,5][5,9]
         # Vio_general_C0[1,1]
         GC.gc()
     catch e
@@ -531,7 +539,7 @@ function SLA_clean(Runcode,OP_init0,OP_NLP;BItermax=4)
     Best_solution= OP_init0V;Best_vio_general_N=Vio_general_N0; Best_vio_sum_N=Vio_Sum_N0
 
 
-    cost0=Ncost0.+(AVG_C_cost0.-Ncost0)*conprob_
+    cost0=Ncost0.+(AVG_C_cost0.-Ncost0)*Glob["conprob_"]
     #sum(Ncost0)
     #sum((AVG_C_cost0.-Ncost0))
     mincost=sum(cost0);minOptGap= 100*((sum(cost0)-OP_NLP["obj"])/(OP_NLP["obj"]))
@@ -547,7 +555,7 @@ function SLA_clean(Runcode,OP_init0,OP_NLP;BItermax=4)
     Iter_Rep=Make_Iter_report(OP_NLP,LNS_cas_NLP)
     # Vio_general_N=Best_vio_general_N;Vio_general_C=Best_vio_general_C;OP=Best_solution
     # Best_solution["acc"]=[0.0 0.0]
-    Iter_Rep=Add_Iter_report!(Runcode,Iter_Rep,Best_solution,mincost,minOptGap,Best_vio_sum_N,Best_vio_sum_C,Best_vio_general_N,Best_vio_general_C,iter,LNS_cas0,0,0,[[0 0] [0 0] [0 0] [0 0]])
+    Iter_Rep=Add_Iter_report!(Glob,Iter_Rep,Best_solution,mincost,minOptGap,Best_vio_sum_N,Best_vio_sum_C,Best_vio_general_N,Best_vio_general_C,iter,LNS_cas0,0,0,[[0 0] [0 0] [0 0] [0 0]])
     # if Runcode[1]==2
     #     Best_vio_general_C=0; Best_vio_sum_C=0
     #     mincost=1e100;minOptGap=10000;min_infmax_N=100
@@ -567,26 +575,75 @@ function SLA_clean(Runcode,OP_init0,OP_NLP;BItermax=4)
     OP,out,model=0,0,0
     LNS_cas=LNS_cas0
 
+    h_cas=DataFrame()
+    cas_hist=[]
+    Runcode= Glob["Runcode"]
+    # Glob["Cascade_Opt"]=true
+    Glob["Risk_cascade"]= false
+    Cascade_Opt=Glob["Cascade_Opt"]
+    # Glob["I_relax"]=1.1
+    Cascade_Rep=Make_cascade_Rep(casreps_NLP,OP_NLP,LNS_cas_NLP)
+    Cascade_Rep=Add_Cascade_Rep!(casreps,LNS_cas,Glob,Cascade_Rep,Best_solution,mincost,minOptGap,iter,0,0,[[0 0] [0 0] [0 0] [0 0]])
+ 
+
+
     while iter <10 && res_time<=600
         iter=iter+1;
         while true
             try
                 if Runcode[2]!=5
                     if Cascade_Opt
-                        OP,out,model=Optimizer(Linearization_TYPE[Runcode[2]],deepcopy(OP_init),casreps)
+                        OP,out,model=Optimizer(Glob, Linearization_TYPE[Runcode[2]],deepcopy(OP_init),casreps,h_cas)
+                        # casreps[1,3]
+                        # println("Worst_slk_cascade:",value.(model[:Worst_slk_cas]))
+
+                        # OP,out,model=Optimizer(Glob, Linearization_TYPE[Runcode[2]],deepcopy(OP_init),nothing,h_cas)
+                        # model[:Vm_Cascade_expr]
+                        # value.(model[:CNcascade_LP1])
+                        # Plots.plot(model[:Vm_Cascade_expr])
+                        # Plots.plot!(model[:Vm_Cascade_expr] .+ value.(model[:diffOpt_expr]))
+                        # value.(model[:slk_cas])    
+                        # model[:bin_Cas]
+                        # arr=value.(model[:bin_Cas])
+                        # idx_ones = findall(x -> x==1.0, arr.data)
+                        # (arr.axes)[1][idx_ones]
+                        # value.(model[:CNcascade_hist])
+                        # h_cas
+                        append!(cas_hist,setdiff(get_cascade_stage1_new(model[:CascadeInfo]),cas_hist))
+                        # diffOpt_expr
+                        # value.(model[:diffOpt_expr])
+
+                        # model[:CascadeInfo]["tcs_Cascade"]
+                        # h_cas1=deepcopy(h_cas)
+                        # h_cas
+                        # Plots.plot(h_cas1.Vio)
+                        # Plots.plot!(h_cas.Vio)
+                        # idx_f=findall(((t,c,s),) -> s==1, model[:CascadeInfo]["tcs_Cascade"][:,1])
+
+                        # (model[:Vm_Cascade_expr] .+ value.(model[:diffOpt_expr]))[idx_f]
+
+                        # (value.(model[:diffOpt_expr]))[idx_f]
+
+                        # value.(model[:hist_I]) 
+                        # IImax=(Glob["SysData"]["Line"]."RATE_A")[getindex.(h_cas.tup,2)]
+                        # opt_cal_hist=sqrt.((IImax.*h_cas.Vio).^2 .+ value.(model[:hist_I]))./IImax 
+                        # findmax(opt_cal_hist)
+                        # h_cas1
+
+                        # h_cas.Vio.-opt_cal_hist
                     else
-                        OP,out,model=Optimizer(Linearization_TYPE[Runcode[2]],deepcopy(OP_init))
+                        OP,out,model=Optimizer(Glob, Linearization_TYPE[Runcode[2]],deepcopy(OP_init))
                     end
                     # value.(model[:slack_Cascade_LP])
                     # maximum(value.(model[:slack_Cascade_LP]))
-
                 elseif iter<2
-                    OP,out,model=Optimizer(Linearization_TYPE[1],deepcopy(OP_init))
+                    OP,out,model=Optimizer(Glob, Linearization_TYPE[1],deepcopy(OP_init))
                 else
                     if Cascade_Opt
-                        OP,out,model=Optimizer(Linearization_TYPE[3],deepcopy(OP_init),casreps)
+                        OP,out,model=Optimizer(Glob, Linearization_TYPE[3],deepcopy(OP_init),casreps,h_cas)
+                        append!(cas_hist,setdiff(get_cascade_stage1_new(model[:CascadeInfo]),cas_hist))
                     else
-                        OP,out,model=Optimizer(Linearization_TYPE[3],deepcopy(OP_init))
+                        OP,out,model=Optimizer(Glob, Linearization_TYPE[3],deepcopy(OP_init))
                     end
                 end
 
@@ -671,17 +728,21 @@ function SLA_clean(Runcode,OP_init0,OP_NLP;BItermax=4)
                         println("slk_normal_Q:",value.(model[:slk_Norm1]))
                         println("slk_cont_Q:",value.(model[:slk_Cont1]))
                         if Cascade_Opt
-                            println("slk_cascade_LP:",maximum(value.(model[:slack_Cascade_LP]);init=0.0))
+                            println("slk_cascade_LP:",value.(model[:cascade_penalty]))
+                            println("Worst_slk_cascade:",value.(model[:Worst_slk_cas]))
                         end
 
-               
+                    # value.(model[:slk_cas])
+                    # value.(model[:cascade_penalty])
+                    # value.(model[ob])
+                    # objective_value(model)
                     # value.(model[:slk_Vmin])
                     # println("slk_normal:",value.(model[:slk_Norm]))
                     # println("slk_cont:",value.(model[:slk_Cont]))
                     # model[:slkDataFrame]["slkVmax_c"][557]
                     # CartesianIndex(10,14,21) in model[:slkDataFrame]["slkVmax_c"]
                     # value.(model[:slk_Imax_c])
-                    # SysData["Bus"][14,5:6].=[1.1,0.9]
+                    # Glob["SysData"]["Bus"][14,5:6].=[1.1,0.9]
                     # model[:CV2magexporg][7,50,31]
                     # value.(model[:slk_Cont])
                     # findmax(value.(model[:slk_Vmax_c]))
@@ -711,10 +772,21 @@ function SLA_clean(Runcode,OP_init0,OP_NLP;BItermax=4)
             else @warn "Optimizer is not converged"; @error "termination status: $(termination_status(model))"; end
         end
         try
-            Ncost,Vio_Sum_N,Vio_general_N,AVG_C_cost,Vio_Sum_C,OP_Valid,Vio_general_C,casreps=AC_PFCheck(OP,Runcode)
-            LNS_cas,LNSs=LNS_cal(casreps)
-            # LNSs=[casreps[t,i][end,"LNS_T"] for t in 1:nTL, i in 1:size(SysData["ConL"],1)]
+            Ncost,Vio_Sum_N,Vio_general_N,AVG_C_cost,Vio_Sum_C,OP_Valid,Vio_general_C,casreps2,h_cas2=AC_PFCheck(OP,Glob,cas_hist)
+            LNS_cas,LNSs=LNS_cal(casreps2)
+            # LNSs=[casreps[t,i][end,"LNS_T"] for t in 1:nTL, i in 1:size(Glob["SysData"]["ConL"],1)]
             # findall(x-> size(x,1)>1, casreps)
+            # (13,12,4) in cas_hist
+            # casreps[12,18]
+            # IIIindex=findall(x-> x==(13,4,1), model[:CascadeInfo]["tcs_Cascade"])
+            # IIImodel= sqrt.((model[:Vm_Cascade_expr]).^2 .+ (value.(model[:diffOpt_expr]))./IIImax)[IIIindex]
+            # model[:Vm_Cascade_expr]
+            # model[:diffVm_expr]
+            # value.(model[:diffOpt_expr])
+            # IIImax=(Glob["SysData"]["Line"]."RATE_A")[ model[:CascadeInfo]["line_Cascade"]].^2
+            # value.(model[:bin_Cas])
+            
+            # model[:CNcascade_LP1]
             # OP["Pshed"][:,1872]
             # Vio_general_C[17,10]
             # Vio_general_C[6,26]."abs"
@@ -722,7 +794,7 @@ function SLA_clean(Runcode,OP_init0,OP_NLP;BItermax=4)
             # Vio_general_C[19,10]
 
             GC.gc()
-            cost= Ncost.+(AVG_C_cost.-Ncost)*conprob_
+            cost= Ncost.+(AVG_C_cost.-Ncost)*Glob["conprob_"]
             #sum(Ncost)
             OptGap= 100*((sum(cost)-OP_NLP["obj"])/(OP_NLP["obj"]))
             Maxvio_C=maximum(Vio_Sum_C."Max");Maxvio_N=maximum(Vio_Sum_N."Max")
@@ -738,12 +810,14 @@ function SLA_clean(Runcode,OP_init0,OP_NLP;BItermax=4)
             end
 
                     # Tuple(Filter[1])
-            Iter_Rep=Add_Iter_report!(Runcode,Iter_Rep,OP_Valid,sum(cost),OptGap,Vio_Sum_N,Vio_Sum_C,Vio_general_N,Vio_general_C,iter,LNS_cas,sol_time,res_time,Filter,R_P,R_Q)
+            Iter_Rep=Add_Iter_report!(Glob,Iter_Rep,OP_Valid,sum(cost),OptGap,Vio_Sum_N,Vio_Sum_C,Vio_general_N,Vio_general_C,iter,LNS_cas,sol_time,res_time,Filter,R_P,R_Q)
             display(Iter_Rep)
             display(Iter_Rep[:,15:end])
 
-            # findmax(OP["V_c_Line"].-(SysData["Bus"]."V_max (pu)")')
-            # OP["V_c_Line"][1,43,10]-(SysData["Bus"]."V_max (pu)")[43]
+            Cascade_Rep=Add_Cascade_Rep!(casreps2,LNS_cas,Glob,Cascade_Rep,OP_Valid,sum(cost),OptGap,iter,sol_time,res_time)
+            display(Cascade_Rep)
+            # findmax(OP["V_c_Line"].-(Glob["SysData"]["Bus"]."V_max (pu)")')
+            # OP["V_c_Line"][1,43,10]-(Glob["SysData"]["Bus"]."V_max (pu)")[43]
             # value.(model[:CV2magexporg][18,41,1])
             # model[:I_c_Line][22,46,30]
             # value.(model[:Line_flow_c_Line][7,30,18])
@@ -757,8 +831,8 @@ function SLA_clean(Runcode,OP_init0,OP_NLP;BItermax=4)
                             # OP["V_c_Line"][22,:,30]
 
             # raw["QActBus"]
-            # SysData["Line"]."RATE_A"[57].^2
-            # maximum(-OP["V"].+(SysData["Bus"]."V_min (pu)")')
+            # Glob["SysData"]["Line"]."RATE_A"[57].^2
+            # maximum(-OP["V"].+(Glob["SysData"]["Bus"]."V_min (pu)")')
         catch e
             # rethrow(e)
             @error "PF not converged"
@@ -774,6 +848,8 @@ function SLA_clean(Runcode,OP_init0,OP_NLP;BItermax=4)
             for k in collect(keys(OP_Valid))
                 OP_init[k]=OP_Valid[k]
             end 
+            h_cas=deepcopy(h_cas2)
+            casreps=deepcopy(casreps2)
         else
             BIter+=1
             if Linearization_TYPE[Runcode[2]]=="SENS"
@@ -803,15 +879,18 @@ function SLA_clean(Runcode,OP_init0,OP_NLP;BItermax=4)
             Best_Iter=iter
             Best_sol_time=sol_time;Best_res_time=res_time
         end
-        if max(min_infmax_N,min_infmax_C,LNS_cas)<1e-4 || ( Cascade_Opt && max(min_infmax_N,min_infmax_C)<1e-4) 
+        if (max(Maxvio_N,Maxvio_C)<1e-4 && Cascade_Rep[end,"CasNum"]==0) || ( !Cascade_Opt && max(min_infmax_N,min_infmax_C)<1e-4) 
             @info "Violations are removed"
             break
         end
     end
     push!(Iter_Rep,repeat(["end"],size(Iter_Rep,2)))
+    push!(Cascade_Rep,repeat(["end"],size(Cascade_Rep,2)))
     # Iter_Rep2=deepcopy(Iter_Rep)
     # Iter_Rep[1:7,:]
-    ods_write(Path*"../Result/Iter_Report/"*Problem_Type*string(Runcode)*"_0",Dict(("General",1,1)=>Iter_Rep))
+    ods_write(Glob["Path"]*"../Result/Iter_Report/"*Problem_Type*string(Runcode),Dict(("General",1,1)=>Iter_Rep))
+    ods_write(Glob["Path"]*"../Result/Cascade_Report/"*Problem_Type*string(Runcode)*"CR",Dict(("General",1,1)=>Cascade_Rep))
+
     # ods_write(Path*"../Result/Iter_Report/"*Problem_Type*string(Runcode),Dict(("General",1,1)=>Iter_Rep))
     return mincost,Best_solution,Best_Iter,min_infmax_N,min_infmax_C,minOptGap,Best_vio_general_N,Best_vio_sum_N,Best_vio_general_C,Best_vio_sum_C,Best_sol_time,Best_res_time
 end
@@ -827,7 +906,7 @@ function SLP_Report_Prepare(init_model,init_out)
         SLP_Rep=DataFrame(repeat([[]],length(Head)), Head)
         newrow=["-" "Non-Linear" 0 sol_time1 0 1 "-" "-" "-" "-" 0 "-" "-" cost1 "-" "-" "-" "-" "-" "-" "-" "-" ]
     elseif Report =="full"
-        Head=["Initialization";"Method";"Runcode";"Time";"Res_Time";"Iter";"OptGap";"Max_Inf_N";"Max_Inf_C";"Obj";["PG$i" for i in 1:size(SysData["Gen"],1)];["QG$i" for i in 1:size(SysData["Gen"],1)];["V$i" for i in 1:size(SysData["Bus"],1)];["θ$i" for i in 1:size(SysData["Bus"],1)]]
+        Head=["Initialization";"Method";"Runcode";"Time";"Res_Time";"Iter";"OptGap";"Max_Inf_N";"Max_Inf_C";"Obj";["PG$i" for i in 1:size(Glob["SysData"]["Gen"],1)];["QG$i" for i in 1:size(Glob["SysData"]["Gen"],1)];["V$i" for i in 1:size(Glob["SysData"]["Bus"],1)];["θ$i" for i in 1:size(Glob["SysData"]["Bus"],1)]]
         SLP_Rep=DataFrame(repeat([[]],length(Head)), Head)
         newrow=["-" "Non-Linear" 0  sol_time1 0 1 0 0 0 cost1 PG_1 QG_1 V_1 θ_1]
     elseif Problem_Type in ["SCOPF", "RBOPF"]
@@ -867,12 +946,12 @@ function Add_SLP_report!(SLP_Rep,Runcode,Best_solution,mincost,minOptGap,min_inf
 end
 
 
-function Initial_Set_points()
+function Initial_Set_points(Glob)
     #exact non-linear solution
     if Problem_Type=="OPF"
         init_out,init_model=DA_OPF()
     elseif Problem_Type=="SCOPF"
-        init_out,init_model=DA_SCOPF()
+        init_out,init_model=DA_SCOPF(Glob)
     elseif Problem_Type=="RBOPF"
         init_out,init_model=DA_SCOPF(;relaxconfac=0.2)
     end
@@ -881,17 +960,17 @@ function Initial_Set_points()
     DA_out,DA_model=Dict(),Dict()
     for i in sort(filter(x-> x[1:2]=="DA",collect(values(Linearization_INIT))))
         global ERORR["DA"]=[0.01 0.01]*parse(Int, i[3:end])
-        Set_global_parameters(Test_Sys)
+        Glob1=Set_global_parameters1(Test_Sys)
         if Problem_Type=="OPF"
             DA_out[i],DA_model[i]=DA_OPF()
         elseif Problem_Type=="SCOPF"
-            DA_out[i],DA_model[i]=DA_SCOPF()
+            DA_out[i],DA_model[i]=DA_SCOPF(Glob1)
         elseif Problem_Type=="RBOPF"
             DA_out[i],DA_model[i]=DA_SCOPF(;relaxconfac=0.2)
         end
     end
     global ERORR["DA"]=[0.00 0.00]
-    Set_global_parameters(Test_Sys)
+    # Glob=Set_global_parameters1(Test_Sys)
     return DA_out,DA_model,init_out,init_model
 end
 function Partials(Jacob,V,isl,nBus)
@@ -1095,7 +1174,7 @@ function Set_TR_new(Base_TR_N,Base_TR_C,Lininit,SENSDict_All, I2_0, V_0, raw,PBo
 
 end
 
-function Set_TR_new2(Base_TR_N,Base_TR_C,SENSDict_All, I2_0, V_0, raw,PBound,QBound,CascadeInfo; cl=1,Improve_Rate=10)
+function Set_TR_new2(nTP , Base_TR_N,Base_TR_C,SENSDict_All, I2_0, V_0, raw,PBound,QBound,CascadeInfo; cl=1,Improve_Rate=10)
     # Precompute limits
     F2maxtemp = (raw["Line"]."RATE_A") .^ 2
     Imaxlimit0=(F2maxtemp')[ones(Int8,nTP),:,ones(Int8,cl)]
@@ -1109,8 +1188,8 @@ function Set_TR_new2(Base_TR_N,Base_TR_C,SENSDict_All, I2_0, V_0, raw,PBound,QBo
     S_VQ = SENSDict_All["S_VQ"]
 
 
-    TR_P,ImaxIndex,VmaxIndex_P,VminIndex_P,acc_I,Pinjlimit,P2worst_vio,Pworst_vio,report_TR_P,Vmax_VP,Vmin_VP,Imax_IP = findTR_P_coupled2( CascadeInfo, Base_TR_N,Base_TR_C,I2_0,Imaxlimit0,S_IP,V_0,Vmaxlimit0,Vminlimit0,deepcopy(S_VP),PBound,raw,cl,0.05)
-    TR_Q,VmaxIndex,VminIndex,acc_V,Qinjlimit,Qworst_vio,report_TR_Q= findTR_Q_coupled2(V_0,Vmax_VP,Vmin_VP,VmaxIndex_P,VminIndex_P,Vmaxlimit0,Vminlimit0,deepcopy(S_VQ),QBound,raw,cl)
+    TR_P,ImaxIndex,VmaxIndex_P,VminIndex_P,acc_I,Pinjlimit,P2worst_vio,Pworst_vio,report_TR_P,Vmax_VP,Vmin_VP,Imax_IP = findTR_P_coupled2( nTP, CascadeInfo, Base_TR_N,Base_TR_C,I2_0,Imaxlimit0,S_IP,V_0,Vmaxlimit0,Vminlimit0,deepcopy(S_VP),PBound,raw,cl,0.05)
+    TR_Q,VmaxIndex,VminIndex,acc_V,Qinjlimit,Qworst_vio,report_TR_Q= findTR_Q_coupled2(nTP, V_0,Vmax_VP,Vmin_VP,VmaxIndex_P,VminIndex_P,Vmaxlimit0,Vminlimit0,deepcopy(S_VQ),QBound,raw,cl)
     # GC.gc()
     VmaxIndext=union(VmaxIndex,VmaxIndex_P)
     VminIndext=union(VminIndex,VminIndex_P)
@@ -1120,7 +1199,7 @@ function Set_TR_new2(Base_TR_N,Base_TR_C,SENSDict_All, I2_0, V_0, raw,PBound,QBo
     return [TR_P, TR_Q], [ImaxIndext, VmaxIndext, VminIndext],[acc_I,acc_V],Injlimit,[P2worst_vio,Qworst_vio,Pworst_vio]
 end
 
-function find_state_variables(LSCOPF,Lininit,raw,Mode="Norm")
+function find_state_variables(nTP, LSCOPF,Lininit,raw,Mode="Norm")
     isl=findall(x-> x==3,raw["Bus"]."Bus_Type")[1]
     if Mode=="Norm"
         Jacob=Lininit["NJacob"]

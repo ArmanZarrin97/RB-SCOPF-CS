@@ -57,13 +57,13 @@ function DA_OPF(LinMethod="None",OP_init=Dict{String,Any}(),init__="Zero") #Arra
     return OPFout,SCOPF
 end
 
-function DA_SCOPF(casreps;LinMethod="None",OP_init=Dict{String,Any}(),init__="Zero",relaxconfac=0.0) #Array{Union{Float64,Array{Float64}}}
+function DA_SCOPF(Glob, casreps=nothing,h_cas=DataFrame();LinMethod="None",OP_init=Dict{String,Any}(),init__="Zero",relaxconfac=0.0) #Array{Union{Float64,Array{Float64}}}
 
     #init__="Zero";LinMethod="None";OP_init=Dict{String,Array{Union{Float64,Array{Float64}}}}()
     Ptype_="DA";init_=init__;
-    global nTP=nTL;
-    global TD=Td;
-    raw,initraw,profraw= try Data_Reader(;Ptype=Ptype_ , init=init_)
+    nTP=Glob["nTL"];
+    TD=Glob["Td"];
+    raw,initraw,profraw= try Data_Reader(Glob;Ptype=Ptype_ , init=init_)
     catch e
         @warn "Problem with running Data_Reader function"
         rethrow(e)
@@ -86,47 +86,47 @@ function DA_SCOPF(casreps;LinMethod="None",OP_init=Dict{String,Any}(),init__="Ze
     else
         Activeloadbus=1:raw["nLoad"]
     end
-    if loadbusinjection=="true"
+    if Glob["loadbusinjection"]=="true"
         raw["PActBus"]= filter(x-> !isempty(x."load")||!isempty(x."ess")||!isempty(x."res")||!isempty(x."gen")||!isempty(x."fl"),ctdall)[!,:nbus]
         raw["QActBus"]= filter(x-> !isempty(x."load")||!isempty(x."shunt") || !isempty(x."gen")||!isempty(x."fl"),ctdall)[!,:nbus]
     else
         raw["PActBus"]= filter(x-> !isempty(intersect(x."load",Activeloadbus))||!isempty(x."ess")||!isempty(x."res")||!isempty(x."gen")||!isempty(x."fl"),ctdall)[!,:nbus]
-        raw["QActBus"]= filter(x-> !isempty(intersect(x."load",Activeloadbus)) || !isempty(x."gen")||!isempty(x."fl"),ctdall)[!,:nbus] #||!isempty(x."shunt")
+        raw["QActBus"]= filter(x-> !isempty(intersect(x."load",raw["PActBus"])) || !isempty(x."gen")||!isempty(x."fl"),ctdall)[!,:nbus] #||!isempty(x."shunt")
         # raw["PActBus"]= filter(x-> !isempty(x."ess")||!isempty(x."res")||!isempty(x."gen")||!isempty(x."fl"),ctdall)[!,:nbus]
         # raw["QActBus"]= filter(x-> !isempty(x."shunt") || !isempty(x."gen")||!isempty(x."fl"),ctdall)[!,:nbus]
     end
     raw["nPActBus"]=size(raw["PActBus"])[1];raw["nQActBus"]=size(raw["QActBus"])[1]
     raw["Bus"][raw["PActBus"],"PActive"].=1;raw["Bus"][raw["QActBus"],"QActive"].=1
 
-    glob_input=(nTP,TD,raw,initraw,initraw,Mode,Inc_coef,Dec_coef,CCT,LSpermit,ctdall)
+    glob_input=(nTP,TD,raw,initraw,initraw,Glob["Mode"],Glob["Inc_coef"],Glob["Dec_coef"],Glob["CCT"],Glob["LSpermit"],ctdall)
 
     Proffin=Load_Data(nTP,raw,profraw,ctdall) # Prepare Load and Shunt data and generation setpoints
     SCOPF,N_Var,C_Var=try
-        L_MPSCOPF(glob_input,Proffin,casreps;conprob=conprob_,LinMethod=LinMethod,Lininit=OP_init,relaxconfac=relaxconfac);
-        # conprob=conprob_;LinMethod=LinMethod;Lininit=OP_init
+        L_MPSCOPF(Glob,glob_input,Proffin,casreps,h_cas;conprob=Glob["conprob_"],LinMethod=LinMethod,Lininit=OP_init,relaxconfac=relaxconfac);
+        # conprob=Glob["conprob_"];LinMethod=LinMethod;Lininit=OP_init
     catch e
         @warn "Error in MPSCOPF function: $e"
-        global debug_hint=glob_input,Proffin
+        debug_hint=glob_input,Proffin
         rethrow(e)
     end
 
     OPFout,Initials=try  Get_Result(SCOPF,raw,initraw)
     catch e
         @warn "Error in Get_Result function: $e"
-        global debug_hint= SCOPF,N_Var,C_Var
+        debug_hint= SCOPF,N_Var,C_Var
         rethrow(e)
     end
 
 if printlevel[2] ==1
     try
-        ODSW(Path*"/../Result/DASCOPF",OPFout)
-        set_initial(Path*"DA_SCOPF",Initials)
+        ODSW(Glob["Path"]*"/../Result/DASCOPF",OPFout)
+        set_initial(Glob["Path"]*"DA_SCOPF",Initials)
     catch e
         @warn "Error in ODSW or set_initial function: $e"
-        global debug_hint = SCOPF,OPFout,Initials
+        debug_hint = SCOPF,OPFout,Initials
         rethrow(e)
     end
-    ods_write(Path*"/../Result/Overview",Dict(("Obj",2,1)=>[["DA_SCOPF"] value(SCOPF[:real_objective])]))
+    ods_write(Glob["Path"]*"/../Result/Overview",Dict(("Obj",2,1)=>[["DA_SCOPF"] value(SCOPF[:real_objective])]))
 end
     return OPFout,SCOPF
 end

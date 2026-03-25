@@ -6,6 +6,8 @@ include("CSC.jl")
 
     df_min = 0.02;df_max = 0.01;df_eps = 0.001;df_minmin = 0.06;df_maxmax = 0.06;rcf_max = 0.021;rcf_min = 0.021;eps_g = 0.01;eps_v = 0.01;
     epsilon_pq = 0.05;Vth = 0.9;sb = 100;epsilon_pq = 0.05;
+
+    # Vth = 0.92
 mutable struct Globcascade
     LdI::Vector{Float64}
     LdI_v::Vector{Float64}

@@ -45,7 +45,9 @@ function multislack_acpf_order_pmaxqmax3(y_bus_i, B, L, G, Ld, Shu, REN, BAT, or
 end
 
 function multislack_acpf_order_V2(y_bus,
-    B, L, G, Ld, Shu, REN, BAT, order, ctd)
+    B, L, G, Ld, Shu, REN, BAT, order, ctd;print=false)
+
+    # y_bus=y_bus_i
     
 
     #----------------------------------------------------------------------------------------------
@@ -214,10 +216,12 @@ function multislack_acpf_order_V2(y_bus,
         # conditioning=cond(dense_Jacob1)
         # printstyled("conditioning factor is: $conditioning:"; color=:red, blink=true)
         if !issuccess(Jcb)
-            println("")
-            show("Sigularity observed for iteration= $iteration")
-            println("")
-            # break
+            if print
+                println("")
+                show("Sigularity observed for iteration= $iteration")
+                println("")
+            end
+            break
         end
 
         # .......Step 3-4: Update State Variables (V, delta,Pim)..........................
@@ -262,6 +266,7 @@ function multislack_acpf_order_V2(y_bus,
 
     end # End while loop
 
+    JacobOut=[]
     if !(max_mismatch_pf > epsilon && iteration <= itr_max)
         JacobOut =  jacobianV_orderINDA(nBus, isl, ipq, idu, v_angle_pf, v_mag_pf, df, y_bus, p_inj, q_inj, diff_Tf, diff_Tfm, diff_TV, diff_Gf, diff_Gfm, diff_Bf, diff_Bfm, ki, kip, kiq, PloadBUS, QloadBUS, dp, dq, order, Gs, Bs, Gs0, Bs0, Vi0, ind, ctd; flag=1)
         # Jacob=jacobianV_orderIND(nBus, isl, ipq, idu, v_angle_pf, v_mag_pf, y_bus, p_inj, q_inj, diff_Tf, diff_Tfm, diff_TV, diff_Gf, diff_Gfm, diff_Bf, diff_Bfm, ki, kip, kiq, PloadBUS, QloadBUS, dp, dq, order, Gs, Bs, Gs0, Bs0, Vi0, ind, ctd)
@@ -276,9 +281,11 @@ function multislack_acpf_order_V2(y_bus,
     if max_mismatch_pf < epsilon && iteration < itr_max
         convergence_indicator = 1
     else
-        println("")
-        show("The power flow has NOT converged in the required number of iteration")
-        println("")
+        if print
+            println("")
+            show("The power flow has NOT converged in the required number of iteration")
+            println("")
+        end
     end
 
                                                   

@@ -1,5 +1,5 @@
 
-export Get_Result,Get_ConResult
+# export Get_Result,Get_ConResult
 
 function Get_Result(SCOPF,raw,initraw;OPFon=0)
 

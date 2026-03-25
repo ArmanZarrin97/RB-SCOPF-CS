@@ -510,21 +510,34 @@ end
 
 
 # function Cal_SENS_Cascade(Lininit::Dict{String,Any}, ctdall, nTP::Int64, raw::Dict{String, Any})
-function Cal_SENS_Cascade(Jcb,lineind,t,raw::Dict{String, Any}, Lininit::Dict{String,Any})
+function Cal_SENS_Cascade(Jcbs,lineind,t,raw::Dict{String, Any}, Lininit::Dict{String,Any},reprow)
+    # lineind=[j];t=i;
     # lineind=casreps[t,5][1,"LL"];Jcb=casreps[t,5][1,"Jcbs"]
     # --- unpack / init ---
-    nbus::Int64 = Int64(size(Jcb,1)/2)
+    # reprow."busset"
+    # raw["nBus"]
+    nbus::Int64 = Int64(size(Jcbs,1)/2)
+    nbus_org::Int64 =raw["nBus"]
     nline::Int64 = size(lineind,1)
     ntrans::Int64 = 0
-    nPbus::Int64 = raw["nPActBus"]
-    nQbus::Int64 = raw["nQActBus"]
-    Pbus = raw["PActBus"]
-    Qbus = raw["QActBus"]
+    # nPbus::Int64 = raw["nPActBus"]
+    # nQbus::Int64 = raw["nQActBus"]
+    # Pbus = raw["PActBus"]
+    # Qbus = raw["QActBus"]
+
+    Pbus=findall(x-> x in raw["PActBus"] ,reprow."busset")
+    Qbus=findall(x-> x in raw["QActBus"] ,reprow."busset")
+    nPbus::Int64 = length(Pbus)
+    nQbus::Int64 = length(Qbus)
+    Pbusindex=findall(x-> x in reprow."busset" ,raw["PActBus"])
+    Qbusindex=findall(x-> x in reprow."busset" ,raw["QActBus"])
 
 
-    CC = 1
-    V_0 = Lininit["V"]
-    θ_0 = Lininit["θ"]
+    # CC = 1
+    V_0 = zeros(Float64, nbus_org)
+    θ_0 = zeros(Float64, nbus_org)
+    V_0[reprow."busset"] .= reprow."Vmag"
+    θ_0[reprow."busset"] .= reprow."Vang"
     TR = ones(Float64, nline + ntrans)
     if ntrans != 0
         TR[nline+1:end] .= raw["Trans"]."ratio"
@@ -539,15 +552,20 @@ function Cal_SENS_Cascade(Jcb,lineind,t,raw::Dict{String, Any}, Lininit::Dict{St
     tb = df."To"
 
     # precomputed voltage/angle differences (shaped nTP x nLine x CC or similar)
-    Δθ = @. θ_0[t, fb, 1]
-    Δθ .= θ_0[t, fb, 1] .- θ_0[t, tb, 1]   # Δθ[t, line, c] = θ_0[t,fb,c] - θ_0[t,tb,c]
-    Vn = V_0[t, fb, 1]
-    Vm = V_0[t, tb, 1]
+    # Δθ = @. θ_0[t, fb, 1]
+    # Δθ .= θ_0[t, fb, 1] .- θ_0[t, tb, 1]   # Δθ[t, line, c] = θ_0[t,fb,c] - θ_0[t,tb,c]
+    # Vn = V_0[t, fb, 1]
+    # Vm = V_0[t, tb, 1]
+
+    Δθ = @. θ_0[fb]
+    Δθ .= θ_0[fb] .- θ_0[tb]   # Δθ[t, line, c] = θ_0[t,fb,c] - θ_0[t,tb,c]
+    Vn = V_0[fb]
+    Vm = V_0[tb]
 
     # note: line admittance scalar per line -> replicate into a 3D array for indexing convenience
     Line_admittance = @. g.^2 .+ b.^2
     # --- allocate Pa_IV / Pa_Iθ (one unique sparse matrix per (t,c)) ---
-    pa_template = spzeros(Float64, nline + ntrans, nbus)
+    pa_template = spzeros(Float64, nline + ntrans, nbus_org)
     Pa_IV = copy(pa_template)
     Pa_Iθ = copy(pa_template)
 
@@ -577,8 +595,8 @@ function Cal_SENS_Cascade(Jcb,lineind,t,raw::Dict{String, Any}, Lininit::Dict{St
         end
     end
 
-    fJcb = lu(Jcb)
-    n = size(Jcb, 1)
+    fJcb = lu(Jcbs)
+    n = size(Jcbs, 1)
 
     I_sub_Pbus = I(n)[:, Pbus]
     I_sub_Qbus = I(n)[:, nbus .+ Qbus]
@@ -588,16 +606,21 @@ function Cal_SENS_Cascade(Jcb,lineind,t,raw::Dict{String, Any}, Lininit::Dict{St
     SENStemp_Qbus = fJcb \ I_sub_Qbus
 
     # --- compute S_IP and S_IQ via mul! directly into the preallocated unique matrices ---
-    S_IP_mat = zeros(Float64, nline + ntrans, nPbus)
-    S_IQ_mat = zeros(Float64, nline + ntrans, nQbus)
+    S_IP_mat = zeros(Float64, nline + ntrans, raw["nPActBus"])
+    S_IQ_mat = zeros(Float64, nline + ntrans, raw["nQActBus"])
 
+    S_IP_mat_slice = @view S_IP_mat[:, Pbusindex]
+    S_IQ_mat_slice = @view S_IQ_mat[:, Qbusindex]
+    Pa_IV_slice = @view Pa_IV[:, reprow."busset"]
+    Pa_Iθ_slice = @view Pa_Iθ[:, reprow."busset"]
     @inbounds begin
-        mul!(S_IP_mat, Pa_IV, view(SENStemp_Pbus, nbus+1:size(SENStemp_Pbus,1), :), 1, 0)
-        mul!(S_IP_mat, Pa_Iθ, view(SENStemp_Pbus, 1:nbus, :), 1, 1)
+        mul!(S_IP_mat_slice, Pa_IV_slice, view(SENStemp_Pbus, nbus+1:size(SENStemp_Pbus,1), :), 1, 0)
+        mul!(S_IP_mat_slice, Pa_Iθ_slice, view(SENStemp_Pbus, 1:nbus, :), 1, 1)
 
-        mul!(S_IQ_mat, Pa_IV, view(SENStemp_Qbus, nbus+1:size(SENStemp_Qbus,1), :), 1, 0)
-        mul!(S_IQ_mat, Pa_Iθ, view(SENStemp_Qbus, 1:nbus, :), 1, 1)
+        mul!(S_IQ_mat_slice, Pa_IV_slice, view(SENStemp_Qbus, nbus+1:size(SENStemp_Qbus,1), :), 1, 0)
+        mul!(S_IQ_mat_slice, Pa_Iθ_slice, view(SENStemp_Qbus, 1:nbus, :), 1, 1)
     end
+    
 
     # hcat(S_IP_mat,S_IQ_mat)
     return hcat(S_IP_mat,S_IQ_mat)
@@ -2357,7 +2380,11 @@ function Linear_SENS_CP_new(SCOPF,Vars,Parlist,nTP,raw::Dict{String, Any},States
     return SCOPF
 end
 
-function Sensitivity_constraints(LSCOPF,CascadeInfo,N_Var,C_Var,OPFon,raw,Lininit,ctdall)
+function Sensitivity_constraints(Glob, LSCOPF,CascadeInfo,N_Var,C_Var,OPFon,raw,Lininit,ctdall)
+    Td=Glob["Td"]
+    CCT=Glob["CCT"]
+    nTP=Glob["nTL"]
+    
     SENSDict_All=Dict()
     Parlist_N=N_Var[14];Vars_N=N_Var[13]
     Parlist_C=C_Var[11];Vars_C=C_Var[10]
@@ -2437,11 +2464,11 @@ function Sensitivity_constraints(LSCOPF,CascadeInfo,N_Var,C_Var,OPFon,raw,Linini
 
     # @time TR,Indices,acc,Injlimit,Worst_Vio=Set_TR_new(Base_TR_N,Base_TR_C,Lininit,SENSDict_All,I2_0,V_0,raw,PBound,QBound,;cl=cl)
     # @time TR,Indices,acc,Injlimit,Worst_Vio=Set_TR_new2(Base_TR_N,Base_TR_C,SENSDict_All,I2_0,V_0,raw,PBound,QBound,;cl=cl)
-    TR,Indices,acc,Injlimit,Worst_Vio=Set_TR_new2(Base_TR_N,Base_TR_C,SENSDict_All,I2_0,V_0,raw,PBound,QBound,CascadeInfo;cl=cl)
+    TR,Indices,acc,Injlimit,Worst_Vio=Set_TR_new2(nTP,Base_TR_N,Base_TR_C,SENSDict_All,I2_0,V_0,raw,PBound,QBound,CascadeInfo;cl=cl)
 
 
 
-    # TR=[1,0.03]
+    # TR=[1,0.2]
     # acc=0.0
     # Indices[1]
 

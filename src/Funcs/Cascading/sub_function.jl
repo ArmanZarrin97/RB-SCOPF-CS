@@ -292,7 +292,7 @@ end
 
 
 
-function build_is(bi::Vector{Int64}, B::DataFrame, L::DataFrame, T::DataFrame, G::DataFrame, Ld::DataFrame, Shu::DataFrame, y_bus::SparseMatrixCSC{ComplexF64,Int64}, A::SparseMatrixCSC{Int64,Int64})
+function build_is(bi::Vector{Int64}, B::DataFrame, L::DataFrame, T::DataFrame, G::DataFrame, Ld::DataFrame, Shu::DataFrame, BAT::DataFrame, REN::DataFrame, y_bus::SparseMatrixCSC{ComplexF64,Int64}, A::SparseMatrixCSC{Int64,Int64})
 
     y_bus_i = y_bus[bi, bi]
     A_i = A[bi, bi]
@@ -320,7 +320,13 @@ function build_is(bi::Vector{Int64}, B::DataFrame, L::DataFrame, T::DataFrame, G
     Ti[:, 1] .= getindex.(Ref(bus_reindex), Ti[:, 1])
     Ti[:, 2] .= getindex.(Ref(bus_reindex), Ti[:, 2])
 
-    return Bi, Li, Ti, Gi, Ldi, Shui, y_bus_i, A_i
+    BATi = BAT[in.(BAT[:, 1], Ref(bi_set)), :]
+    BATi[:, 1] .= getindex.(Ref(bus_reindex), BATi[:, 1])
+
+    RENi = REN[in.(REN[:, 2], Ref(bi_set)), :]
+    RENi[:, 2] .= getindex.(Ref(bus_reindex), RENi[:, 2])
+
+    return Bi, Li, Ti, Gi, Ldi, Shui, BATi, RENi, y_bus_i, A_i
 end
 
 function assessV4(B, L, T, G, Ld, Shu, REN, BAT, y_bus_i, ctd, Gcas)
@@ -330,6 +336,8 @@ function assessV4(B, L, T, G, Ld, Shu, REN, BAT, y_bus_i, ctd, Gcas)
     # G = G_i
     # Ld = Ld_i
     # Shu = Shu_i
+    # REN= REN_i
+    # BAT = BAT_i
 
     Vsh = Vth * ones(size(Ld, 1))
     iload = Ld[:, 1]
@@ -370,12 +378,12 @@ function assessV4(B, L, T, G, Ld, Shu, REN, BAT, y_bus_i, ctd, Gcas)
     Iij=[]
 
     # vmag_i, vang_i, delta_mismatch_inj, mmm_i, p_i, q_i, p_V, q_V, cg_s, pim_i, df_i, fm_i, sm_i, Gs, Bs, itr_i, sij_i, vio_i
-
-    while true
-
+    tttt=0
+    while true 
         if cg_s == 0
             Ld = load_order2(Ld, order)
             (vmag_i, vang_i, delta_mismatch_inj, mmm_i, p_i, q_i, p_V, q_V, cg_t, pim_i, df_i, fm_i, sm_i, Gs, Bs, itr_i, sij_i, vio_i, Iij, percentIij, is_slack, Jcb) = multislack_acpf_order_pmaxqmax3(y_bus_i, B, L, G, Ld, Shu, REN, BAT, order, ctd)
+            # Shu[7:12,:]
             if cg_t == 0
                 if order == order_max
                     # println(" No short-term equilibrium")
@@ -393,10 +401,12 @@ function assessV4(B, L, T, G, Ld, Shu, REN, BAT, y_bus_i, ctd, Gcas)
 
                         (Ld, uflag, Gcas) = SV_alarm2(Ld, vmag_t, k, Gcas)
                         if uflag == 1
-                            println(" No available load for shedding")
+                            if Gcas.print
+                                println(" No available load for shedding")
+                            end
                             break
                         end
-                        df_i = fr2(G, Ld)
+                        df_i = fr2(G, Ld, BAT, REN)
                         (G, Ld) = updateG2(G, Ld, df_i)
                         Ld = load_order2(Ld, order)
                         (vmag_i, vang_i, delta_mismatch_inj, mmm_i, p_i, q_i, p_V, q_V, cg_t, pim_i, df_i, fm_i, sm_i, Gs, Bs, itr_i, sij_i, vio_i, Iij, percentIij, is_slack, Jcb) = multislack_acpf_order_pmaxqmax3(y_bus_i, B, L, G, Ld, Shu, REN, BAT, order, ctd)
@@ -428,6 +438,9 @@ function assessV4(B, L, T, G, Ld, Shu, REN, BAT, y_bus_i, ctd, Gcas)
             end
             vmag_t = deepcopy(vmag_i[iload])
             Vvio_t = length(find_below(vmag_t, Vsh, eps_v))
+            # println(eps_v)
+            # println(vmag_t[5])
+            # vmag_t[14]
             # bvio_t = find_below(vmag_t, Vsh, eps_v)
         end
         (p_V, q_V) = consumed_power2(Ld, vmag_t, order)
@@ -444,14 +457,16 @@ function assessV4(B, L, T, G, Ld, Shu, REN, BAT, y_bus_i, ctd, Gcas)
             order = 2
             alarm = 0
             (Ld, uflag, Gcas) = SV2(Ld, vmag_t, alarm, Gcas)
+            # Ld[14,:]
             # (G, Ld) = updateGV2(B, L, T, G, Ld, Shu, y_bus_i)
-            df_i = fr2(G, Ld)
+            df_i = fr2(G, Ld, BAT, REN)
             (G, Ld) = updateG2(G, Ld, df_i)
             if uflag == 1
-                println(" No available load for shedding")
+                if Gcas.print
+                    println(" No available load for shedding")
+                end
                 break
             end
-
         else
             if Gcas.print println(" No short-term voltage violation in order = $order") end
 
@@ -480,10 +495,12 @@ function assessV4(B, L, T, G, Ld, Shu, REN, BAT, y_bus_i, ctd, Gcas)
 
                         (Ld, uflag, Gcas) = SV_alarm2(Ld, vmag_t, k,Gcas)
                         if uflag == 1
-                            println(" No available load for shedding")
+                            if Gcas.print
+                                println(" No available load for shedding")
+                            end                            
                             break
                         end
-                        df_i = fr2(G, Ld)
+                        df_i = fr2(G, Ld, BAT, REN)
                         (G, Ld) = updateG2(G, Ld, df_i)
                         order_s = 0
                         Ld = load_order2(Ld, order_s)
@@ -494,6 +511,9 @@ function assessV4(B, L, T, G, Ld, Shu, REN, BAT, y_bus_i, ctd, Gcas)
                             end
                             break
                         end
+                    end
+                    if uflag == 1
+                        break
                     end
                 end
             else
@@ -520,10 +540,12 @@ function assessV4(B, L, T, G, Ld, Shu, REN, BAT, y_bus_i, ctd, Gcas)
                     (Ld, uflag, Gcas) = SV2(Ld, vmag_s, alarm, Gcas)
                     Ld = load_s2(Ld)
                     # (G, Ld) = updateGV2(B, L, T, G, Ld, Shu, y_bus_i)
-                    df_i = fr2(G, Ld)
+                    df_i = fr2(G, Ld, BAT, REN)
                     (G, Ld) = updateG2(G, Ld, df_i)
                     if uflag == 1
-                        println(" No available load for shedding")
+                        if Gcas.print
+                            println(" No available load for shedding")
+                        end                        
                         break
                     end
                 else
@@ -536,11 +558,11 @@ function assessV4(B, L, T, G, Ld, Shu, REN, BAT, y_bus_i, ctd, Gcas)
         end
     end
 
-    df_i = fr2(G, Ld)
+    df_i = fr2(G, Ld, BAT, REN)
     if Gcas.print
         println(" after uvls,   the frequency is :       $df_i pu")
     end
-    return B, L, T, G, Ld, Shu, vmag_i, vang_i, delta_mismatch_inj, mmm_i, p_i, q_i, p_V, q_V, cg_s, pim_i, df_i, fm_i, sm_i, Gs, Bs, itr_i, sij_i, vio_i, Iij, percentIij, Jcb,Gcas
+    return B, L, T, G, Ld, Shu, REN, BAT, vmag_i, vang_i, delta_mismatch_inj, mmm_i, p_i, q_i, p_V, q_V, cg_s, pim_i, df_i, fm_i, sm_i, Gs, Bs, itr_i, sij_i, vio_i, Iij, percentIij, Jcb,Gcas
 end
 
 
@@ -795,7 +817,9 @@ function uvls_r18_2(B, L, T, G, Ld, Shu, y_bus_i, Gcas)
                 while true
                     (Ld, uflag) = SV2_r18_2(Ld, vmag, CBId)
                     if uflag == 1
-                        println(" No available load for shedding, black out")
+                        if Gcas.print
+                            println(" No available load for shedding")
+                        end                        
                         break
                     else
                         df_i = fr2(G, Ld)
@@ -816,7 +840,9 @@ function uvls_r18_2(B, L, T, G, Ld, Shu, y_bus_i, Gcas)
                 while true
                     (Ld, uflag) = SV4_r18_2(Ld, vmag, CBId, Gcas)
                     if uflag == 1
-                        println(" No available load for shedding, black out")
+                        if Gcas.print
+                            println(" No available load for shedding")
+                        end                        
                         break
                     else
                         df_i = fr2(G, Ld)
@@ -937,7 +963,9 @@ function L1_r18_2(B, L, T, G, Ld, Shu, y_bus_i)
 
             (Ld, uflag) = SV1_r18_2(Ld, vmag)
             if uflag == 1
-                println(" No available load for shedding")
+                if Gcas.print
+                    println(" No available load for shedding")
+                end                
                 break
             else
                 df_i = fr2(G, Ld)
@@ -1264,9 +1292,47 @@ function floop2(G, Ld, Gcas)
     return G, Ld, df_i, blkout, Gcas
 end
 
+function floop3(G, Ld, Gcas, BAT, REN)
+        # B = B_i
+        # L = L_i
+        # T = T_i
+        # G = G_i
+        # Ld = Ld_i
+        # Shu = Shu_i
+        # REN= REN_i
+        # BAT= BAT_i
 
 
-function ofgt2(G, Ld, df_i, Gcas)
+    blkout = 0
+    df_i = fr2(G, Ld, BAT, REN)
+    # println(" by no action.................  the frequency is :       $df_i pu")
+
+    if df_i > df_max + df_eps
+        # (G, Ld, df_i) = ofgt2(G, Ld, df_i)
+        (G, Ld, REN, BAT, df_i, Gcas) = ofgt2(G, Ld, REN, BAT, df_i, Gcas)
+        if Gcas.print
+            println(" by ofgt2 (no network effect),   the frequency is :       $df_i pu")
+        end
+    elseif df_i < -(df_min + df_eps)
+        (G, Ld, BAT, REN, df_i, blkout,Gcas) = ufls2(G, Ld, BAT, REN, df_i,Gcas)
+        if blkout == 1
+            if Gcas.print
+                println("blackout of island, due to frequency issue")
+            end
+        else
+            if Gcas.print
+                println(" by ufls2 (no network effect),   the frequency is :       $df_i pu")
+            end
+        end
+    else
+        # println(" no need to ofgt2 or ufls2  ")
+    end
+
+    return G, Ld, df_i, blkout, Gcas, BAT, REN
+end
+
+
+function ofgt2(G, Ld, REN, BAT, df_i, Gcas)
 
     priority = G[:, 14]
     priority = sort(priority)
@@ -1280,7 +1346,6 @@ function ofgt2(G, Ld, df_i, Gcas)
             (G, Ld, df_i, blkout) = ufls2(G, Ld, df_i, Gcas)
             break
         end
-
 
         k = findall3(x -> x == priority[i], G[:, 14])
         if bg[k] == 0
@@ -1298,12 +1363,12 @@ function ofgt2(G, Ld, df_i, Gcas)
 
             kmain = G[k, 16]
             Gcas.Gt[kmain] = Gcas.Gt[kmain] + G[k, 2] / sum(bg[k])
-            df_i = fr2(G, Ld)
+            df_i = fr2(G, Ld, BAT, REN)
             if Gcas.print
                 println(df_i)
             end
             (G, Ld) = updateG2(G, Ld, df_i)
-            df_i = fr2(G, Ld)
+            df_i = fr2(G, Ld, BAT, REN)
             if Gcas.print
                 println(df_i)
             end
@@ -1311,12 +1376,12 @@ function ofgt2(G, Ld, df_i, Gcas)
     end
 
 
-    return G, Ld, df_i, Gcas
+    return G, Ld, REN, BAT, df_i, Gcas
 end
 
 
 
-function ufls2(G, Ld, df_i, Gcas)
+function ufls2(G, Ld, BAT, REN, df_i, Gcas)
 
     priority = Ld[:, 4]
     priority = sort(priority)
@@ -1353,12 +1418,12 @@ function ufls2(G, Ld, df_i, Gcas)
                     printstyled("Load $(Ld[k, 14]) is shed, {$load_block}:"; color=:blue, blink=true)
                     println()
                 end
-                df_i = fr2(G, Ld)
+                df_i = fr2(G, Ld, BAT, REN)
                 if Gcas.print
                     println(df_i)
                 end
                 (G, Ld) = updateG2(G, Ld, df_i)
-                df_i = fr2(G, Ld)
+                df_i = fr2(G, Ld, BAT, REN)
                 if Gcas.print
                     println(df_i)
                 end
@@ -1367,7 +1432,7 @@ function ufls2(G, Ld, df_i, Gcas)
         end
     end
 
-    return G, Ld, df_i, blkout, Gcas
+    return G, Ld, BAT, REN, df_i, blkout, Gcas
 end
 
 
@@ -1439,17 +1504,19 @@ function updateG2(G, Ld, df_i)
 end
 
 
-function fr2(G, Ld)
+function fr2(G, Ld, BAT, REN)
 
     Pd = sum(Ld[:, 2])
     Pg = sum(G[:, 2])
+    Pbat= sum(BAT[:, 2])
+    Pren= sum(REN[:, 5])
     ploss = 0.0
 
     slk = findall3(x -> x == 1, G[:, 12])
     Ri = G[slk, 13]
     beti = ones(length(Ri)) ./ Ri
 
-    Pmm = Pg - Pd - ploss
+    Pmm = Pg - Pd - ploss + Pbat + Pren
 
     # this imbalance is compensated by the 'slack' units not all
     # df_i = Pmm / sum(beti)

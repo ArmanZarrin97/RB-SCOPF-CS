@@ -1,10 +1,10 @@
-function PF_Valid_N(OP::Dict{String,Any}, Runcode) #Array{Union{Float64,Array{Float64}}}
+function PF_Valid_N(OP::Dict{String,Any}, Glob) #Array{Union{Float64,Array{Float64}}}
     #OP=OP_init0
     #OP=Lininit_0_BV
     OP_Valid= deepcopy(OP) #Array{Union{Float64,Array{Float64}}}::Dict{String,Any} 
     nT = size(OP["PG"], 1)
     nBus = size(OP["V"], 2)
-    TSysData = deepcopy(SysData::Dict{String,DataFrame})
+    TSysData = deepcopy(Glob["SysData"]::Dict{String,DataFrame})
     N_cost = zeros(nT)
     # OP_Valid["NSens"] = Array{Matrix{Float64},1}(undef, nT)
     OP_Valid["NJacob"]=[spzeros(Float64,2*nBus, 2*nBus) for _ in 1:nT]
@@ -12,11 +12,11 @@ function PF_Valid_N(OP::Dict{String,Any}, Runcode) #Array{Union{Float64,Array{Fl
     OP_Valid["Qinj"] = Array{Float64,2}(undef, nT, nBus)
     Vio_general = [DataFrame() for _ in 1:nT]
     convergence_indicator = 1
-    OP_Valid=pre_prepration!(OP_Valid,TSysData;nT=nT)
+    OP_Valid=pre_prepration!(Glob,OP_Valid,TSysData;nT=nT)
     # OP_Valid_fix=deepcopy(OP_Valid)
     Threads.@threads for t = 1:nT #
         print(t)
-        ASysData= Prepare_Dataset(OP_Valid, TSysData, t)
+        ASysData= Prepare_Dataset(Glob, OP_Valid, TSysData, t)
         #power injections before PF:
         # p_inj00 = zeros(size(ASysData["Bus"], 1))
         # q_inj00 = zeros(size(ASysData["Bus"], 1))
@@ -52,7 +52,7 @@ function PF_Valid_N(OP::Dict{String,Any}, Runcode) #Array{Union{Float64,Array{Fl
         # maximum(abs.(v_mag-OP["V"][t,:]))
         # maximum(abs.(v_angle-OP["θ"][t,:]))
         #q_inj and QGGG are wrong
-        if Linearization_TYPE[Runcode[2]] in ["SENS", "Hybrid"]
+        if Linearization_TYPE[Glob["Runcode"][2]] in ["SENS", "Hybrid"]
             isl=findall(x -> x == 3, NSysData["Bus"]."Bus_Type")
             nBus=size(NSysData["Bus"], 1)
             # OP_Valid["NSens"][t].=Partials(Jacob, V,isl,nBus)
@@ -63,12 +63,12 @@ function PF_Valid_N(OP::Dict{String,Any}, Runcode) #Array{Union{Float64,Array{Fl
             @error("PF not converged in normal operation and time step $t")
             break
         end
-        Vio_general[t] = make_vio_general(V, percent, Iij)
+        Vio_general[t] = make_vio_general(Glob,V, percent, Iij)
         OP_Valid["V"][t, :] = V
         OP_Valid["θ"][t, :] = θ
         OP_Valid["PG"][t, :] = PGGG
         OP_Valid["QG"][t, :] = QGGG
-        N_cost[t] = obj_cal(PGGG, OP_Valid, t)
+        N_cost[t] = obj_cal(Glob,PGGG, OP_Valid, t)
         OP_Valid["Pinj"][t, :] = p_inj
         OP_Valid["Qinj"][t, :] = q_inj
         GC.gc()
@@ -77,24 +77,24 @@ function PF_Valid_N(OP::Dict{String,Any}, Runcode) #Array{Union{Float64,Array{Fl
 
     return N_cost, Vio_Sum, OP_Valid, Vio_general, convergence_indicator
 end
-function PF_Valid_C(OP_NValid::Dict{String,Any}, Runcode) #Array{Union{Float64,Array{Float64}}}
+function PF_Valid_C(OP_NValid::Dict{String,Any}, Glob) #Array{Union{Float64,Array{Float64}}}
     #OP_NValid=OP_init_NV
     OP_Valid = deepcopy(OP_NValid)
     nBus = size(OP_NValid["V_c_Line"], 2)
     nCon = size(OP_NValid["PG_c_Line"], 3)
     nT = size(OP_NValid["PG_c_Line"], 1)
-    TSysData = deepcopy(SysData::Dict{String,DataFrame})
+    TSysData = deepcopy(Glob["SysData"]::Dict{String,DataFrame})
     C_cost = zeros(nT, nCon)
     # OP_Valid["CSens"] = Array{Matrix{Float64},2}(undef, nT, nCon)
     OP_Valid["CJacob"]=[spzeros(Float64,2*nBus, 2*nBus) for _ in 1:nT, _ in 1:nCon]
     OP_Valid["Pinj_c_Line"] = Array{Float64,3}(undef, nT, nBus, nCon)
     OP_Valid["Qinj_c_Line"] = Array{Float64,3}(undef, nT, nBus, nCon)
     Vio_general = [DataFrame() for _ in 1:nT, _ in 1:nCon]
-    OP_Valid=pre_prepration!(OP_Valid,TSysData;nCon=nCon,nT=nT,C="ConL")
+    OP_Valid=pre_prepration!(Glob, OP_Valid,TSysData;nCon=nCon,nT=nT,C="ConL")
     Threads.@threads for t = 1:nT
         for i = 1:nCon
             print(t)
-            ASysData= Prepare_Dataset(OP_Valid, TSysData, t; i=i, C="ConL")
+            ASysData= Prepare_Dataset(Glob, OP_Valid, TSysData, t; i=i, C="ConL")
             #power injections before PF:
             # p_inj00 = zeros(size(ASysData["Bus"], 1))
             # q_inj00 = zeros(size(ASysData["Bus"], 1))
@@ -118,7 +118,7 @@ function PF_Valid_C(OP_NValid::Dict{String,Any}, Runcode) #Array{Union{Float64,A
             #     println("time '$(t)' and con '$i'")
             #     println("$(length(LNS_stage)) stage of Cascade cause $(sum(LNS_stage)) p.u. LNS ")
             # end
-            if Linearization_TYPE[Runcode[2]] in ["SENS", "Hybrid"]
+            if Linearization_TYPE[Glob["Runcode"][2]] in ["SENS", "Hybrid"]
                 isl=findall(x -> x == 3, CSysData["Bus"]."Bus_Type")
                 nBus=size(CSysData["Bus"], 1)
                 # OP_Valid["CSens"][t, i] = Partials(Jacob, V,isl,nBus)
@@ -134,12 +134,12 @@ function PF_Valid_C(OP_NValid::Dict{String,Any}, Runcode) #Array{Union{Float64,A
             # for j=1:size(TSysData["Line"],1)
             #     if j<ASysData["ConL"]."#"[i] percentall[j]=percent[j] elseif j==TSysData["ConL"]."#"[i] percentall[j]=0 elseif j>TSysData["ConL"]."#"[i] percentall[j]=percent[j-1] end
             # end
-            Vio_general[t, i] = make_vio_general(V, percentall, Iijall)
+            Vio_general[t, i] = make_vio_general(Glob,V, percentall, Iijall)
             OP_Valid["V_c_Line"][t, :, i] = V
             OP_Valid["θ_c_Line"][t, :, i] = θ
             OP_Valid["PG_c_Line"][t, :, i] = PGGG
             OP_Valid["QG_c_Line"][t, :, i] = QGGG
-            C_cost[t, i] = obj_cal(PGGG, OP_Valid, t; i=i, C="ConL")
+            C_cost[t, i] = obj_cal(Glob, PGGG, OP_Valid, t; i=i, C="ConL")
             # OP_Valid["CSens"][t, i] = Sens
             OP_Valid["Pinj_c_Line"][t, :, i] = p_inj
             OP_Valid["Qinj_c_Line"][t, :, i] = q_inj
@@ -155,7 +155,7 @@ function ST_PF_Valid_C(OP_NValid::Dict{String,Any}, Runcode) #Array{Union{Float6
     nBus = size(OP_NValid["V_c_Line"], 2)
     nCon = size(OP_NValid["PG_c_Line"], 3)
     nT = size(OP_NValid["PG_c_Line"], 1)
-    TSysData = deepcopy(SysData::Dict{String,DataFrame})
+    TSysData = deepcopy(Glob["SysData"]::Dict{String,DataFrame})
     C_cost = zeros(nT, nCon)
     # OP_Valid["CSens"] = Array{Matrix{Float64},2}(undef, nT, nCon)
     OP_Valid["CJacob"]=[spzeros(Float64,2*nBus, 2*nBus) for _ in 1:nT, _ in 1:nCon]
@@ -222,14 +222,15 @@ function ST_PF_Valid_C(OP_NValid::Dict{String,Any}, Runcode) #Array{Union{Float6
     return Avgcost, Vio_Sum, OP_Valid, Vio_general
 end
 
-function Cascade_Sim(OP_NValid::Dict{String,Any}, Runcode) #Array{Union{Float64,Array{Float64}}}
-    #OP_NValid=OP_init_NV
+function Cascade_Sim(OP_NValid::Dict{String,Any}, Glob,cas_hist=[]) #Array{Union{Float64,Array{Float64}}}
+    # OP_NValid=OP_init_NV
+    # OP_NValid=OP_initV
     OP_Valid = deepcopy(OP_NValid)
-    I_relax=1.037
+    I_relax=Glob["I_relax"]
     nBus = size(OP_NValid["V_c_Line"], 2)
     nCon = size(OP_NValid["PG_c_Line"], 3)
     nT = size(OP_NValid["PG_c_Line"], 1)
-    TSysData = deepcopy(SysData::Dict{String,DataFrame})
+    TSysData = deepcopy(Glob["SysData"]::Dict{String,DataFrame})
     C_cost = zeros(nT, nCon)
     # OP_Valid["CSens"] = Array{Matrix{Float64},2}(undef, nT, nCon)
     OP_Valid["CJacob"]=[spzeros(Float64,2*nBus, 2*nBus) for _ in 1:nT, _ in 1:nCon]
@@ -237,11 +238,13 @@ function Cascade_Sim(OP_NValid::Dict{String,Any}, Runcode) #Array{Union{Float64,
     OP_Valid["Qinj_c_Line"] = Array{Float64,3}(undef, nT, nBus, nCon)
     Vio_general = [DataFrame() for _ in 1:nT, _ in 1:nCon]
     casreps=[DataFrame() for _ in 1:nT, _ in 1:nCon]
-    OP_Valid=pre_prepration!(OP_Valid,TSysData;nCon=nCon,nT=nT,C="ConL")
+    OP_Valid=pre_prepration!(Glob,OP_Valid,TSysData;nCon=nCon,nT=nT,C="ConL")
+    h_cas=DataFrame(tup=cas_hist,Vio=zeros())
     Threads.@threads for t = 1:nT
+        println("time step $t :")
         for i = 1:nCon
-            print(t)
-            ASysData= Prepare_Dataset(OP_Valid, TSysData, t; i=i, C="CASCADE", I_relax=I_relax)
+            print(i)
+            ASysData= Prepare_Dataset(Glob, OP_Valid, TSysData, t; i=i, C="CASCADE", I_relax=I_relax)
             #power injections before PF:
             # p_inj00 = zeros(size(ASysData["Bus"], 1))
             # q_inj00 = zeros(size(ASysData["Bus"], 1))
@@ -259,6 +262,18 @@ function Cascade_Sim(OP_NValid::Dict{String,Any}, Runcode) #Array{Union{Float64,
             V, θ, p_inj, q_inj, convergence_indicator, Iij, percent, PGGG, QGGG, Jacob, LNS_stage, casrep = cascading_sim(CSysData["Bus"], CSysData["Line"], CSysData["Trans"], CSysData["Gen"], CSysData["Load"], CSysData["Shunt"],CSysData["RES"],CSysData["ESS"],Int64[]);
             
             @. casrep."VM" = casrep."VM".*I_relax
+            histelem=findall(x-> x[1]==t && x[3]==i,h_cas.tup)
+            hist_line=getindex.(h_cas.tup[histelem],2) 
+            hist_line_eq=findall( in(Set(hist_line)),CSysData["Line"].Line_N)
+            h_cas.Vio[histelem]=percent[hist_line_eq].*I_relax
+            
+            
+
+
+            # if length(histelem)>0
+            #     outInfo["diffVm"][histelem]= V[]
+            #      outInfo["line_Cascade"][histelem]
+            # end
             # casrep=DataFrame()
             # casrep.Stage[1]=1
             # casrep.Jcbs[3]
@@ -267,7 +282,7 @@ function Cascade_Sim(OP_NValid::Dict{String,Any}, Runcode) #Array{Union{Float64,
             #     println("time '$(t)' and con '$i'")
             #     println("$(length(LNS_stage)) stage of Cascade cause $(sum(LNS_stage)) p.u. LNS ")
             # end
-            if Linearization_TYPE[Runcode[2]] in ["SENS", "Hybrid"]
+            if Linearization_TYPE[Glob["Runcode"][2]] in ["SENS", "Hybrid"]
                 isl=findall(x -> x == 3, CSysData["Bus"]."Bus_Type")
                 nBus=size(CSysData["Bus"], 1)
                 # OP_Valid["CSens"][t, i] = Partials(Jacob, V,isl,nBus)
@@ -283,12 +298,12 @@ function Cascade_Sim(OP_NValid::Dict{String,Any}, Runcode) #Array{Union{Float64,
             # for j=1:size(TSysData["Line"],1)
             #     if j<ASysData["ConL"]."#"[i] percentall[j]=percent[j] elseif j==TSysData["ConL"]."#"[i] percentall[j]=0 elseif j>TSysData["ConL"]."#"[i] percentall[j]=percent[j-1] end
             # end
-            Vio_general[t, i] = make_vio_general(V, percentall, Iijall)
+            Vio_general[t, i] = make_vio_general(Glob,V, percentall, Iijall)
             OP_Valid["V_c_Line"][t, :, i] = V
             OP_Valid["θ_c_Line"][t, :, i] = θ
             OP_Valid["PG_c_Line"][t, :, i] = PGGG
             OP_Valid["QG_c_Line"][t, :, i] = QGGG
-            C_cost[t, i] = obj_cal(PGGG, OP_Valid, t; i=i, C="ConL")
+            C_cost[t, i] = obj_cal(Glob, PGGG, OP_Valid, t; i=i, C="ConL")
             # OP_Valid["CSens"][t, i] = Sens
             OP_Valid["Pinj_c_Line"][t, :, i] = p_inj
             OP_Valid["Qinj_c_Line"][t, :, i] = q_inj
@@ -296,7 +311,7 @@ function Cascade_Sim(OP_NValid::Dict{String,Any}, Runcode) #Array{Union{Float64,
     end
     Vio_Sum = make_vio_sum(Vio_general)
     Avgcost = sum(C_cost, dims=2) ./ nCon
-    return Avgcost, Vio_Sum, OP_Valid, Vio_general,casreps
+    return Avgcost, Vio_Sum, OP_Valid, Vio_general,casreps,h_cas
 end
 
 function PF_Valid_C2(OP_NValid::Dict{String,Any}, Runcode) #Array{Union{Float64,Array{Float64}}}
@@ -374,7 +389,9 @@ function PF_Valid_C2(OP_NValid::Dict{String,Any}, Runcode) #Array{Union{Float64,
     return Avgcost, Vio_Sum, OP_Valid, Vio_general,casreps
 end
 
-function make_vio_general(V::Vector{Float64}, percentall::Vector{Float64}, Iij::Vector{Float64})
+function make_vio_general(Glob,V::Vector{Float64}, percentall::Vector{Float64}, Iij::Vector{Float64})
+    SysData=Glob["SysData"]
+    ϵ = Glob["ϵ_Vio"]
     # # SysData["Line"][221,:]
     # Iij[221]
     VS = DataFrame(Type=["Vmax"; "Vmin"; "Smax"], N=[0; 0; 0], max=[0.0; 0.0; 0.0], mean=[0.0; 0.0; 0.0], Element=[Int64[], Int64[], Int64[]], percent=[Float64[], Float64[], Float64[]], abs=[Float64[], Float64[], Float64[]])
@@ -432,8 +449,9 @@ function make_vio_sum(Vio_general::Array{DataFrame})
     Vio_Sum = DataFrame(Nins=Nins, NVio=NVio, Mean=Reg / NVio, Max=max_, Type=type)
     return Vio_Sum
 end
-function obj_cal(PG, OP, t; i=0, C="N")
+function obj_cal(Glob,PG, OP, t; i=0, C="N")
     #PG=PGGG;OP=OP_Valid;
+    SysData=Glob["SysData"]
 
     costG = SysData["Gen"]."cost_c" + SysData["Gen"]."cost_b" * SysData["Base_MVA"]."base_MVA"[1] .* PG #+ SysData["Gen"]."cost_a"*SysData["Base_MVA"]."base_MVA"[1]^2 .*(PG.^2)
 
@@ -514,19 +532,24 @@ function obj_cal(PG, OP, t; i=0, C="N")
 
     return sum(costG; init=0) + sum(costESS; init=0) + sum(costFL; init=0) + costshed + costcurt + costcurtc
 end
-function AC_PFCheck(OP, Runcode)
+function AC_PFCheck(OP, Glob,cas_hist=[])
     # OP=OP_init0
-    casreps=[]
+    # casreps=[]
     if !isempty(OP["Pinc"])
-        OP = fix_FL!(OP) 
+        OP = fix_FL!(OP,Glob) 
     end
-    Ncost, Vio_Sum_N, OP_init_NV, Vio_general_N =PF_Valid_N(OP, Runcode)
+    Ncost, Vio_Sum_N, OP_init_NV, Vio_general_N =PF_Valid_N(OP, Glob)
     GC.gc()
     if Problem_Type in ["SCOPF","RBOPF"]
         # AVG_C_cost, Vio_Sum_C, OP_initV, Vio_general_C = ST_PF_Valid_C(OP_init_NV, Runcode)
-        AVG_C_cost, Vio_Sum_C, OP_initV, Vio_general_C = PF_Valid_C(OP_init_NV, Runcode)
+        AVG_C_cost, Vio_Sum_C, OP_initV, Vio_general_C = PF_Valid_C(OP_init_NV, Glob)
+
+        # BSON.@save Glob["Path"]*"../Result/test_temp.bson" OP_initV Glob cas_hist
+        # BSON.@load Glob["Path"]*"../Result/test_temp.bson" OP_initV Glob cas_hist
+
+        _, _, _, _, casreps, h_cas = Cascade_Sim(OP_initV, Glob,cas_hist);
         # AVG_C_cost, Vio_Sum_C, OP_initV, Vio_general_C, casreps = PF_Valid_C2(OP_init_NV, Runcode)
-        _, _, _, _, casreps = Cascade_Sim(OP_initV, Runcode)
+        
         # Cascade_Sim(OP_init_NV, Runcode);
         if !isempty(findall(x-> sum(x."LNS_T")>0.0, casreps))
             @warn "There is new Short-term security problem"
@@ -538,13 +561,17 @@ function AC_PFCheck(OP, Runcode)
         AVG_C_cost = Ncost
         Vio_general_C = 0
         casreps=[]
+        h_cas=DataFrame()
     end
-    Vio_general_N, Vio_general_C = coupling_violation_check!(OP_initV, Vio_general_N, Vio_general_C)
-    return Ncost, Vio_Sum_N, Vio_general_N, AVG_C_cost, Vio_Sum_C, OP_initV, Vio_general_C, casreps
+    Vio_general_N, Vio_general_C = coupling_violation_check!(Glob, OP_initV, Vio_general_N, Vio_general_C)
+    return Ncost, Vio_Sum_N, Vio_general_N, AVG_C_cost, Vio_Sum_C, OP_initV, Vio_general_C, casreps,h_cas
 end
 
 
-function coupling_violation_check!(OP_initV, Vio_general_N, Vio_general_C)
+function coupling_violation_check!(Glob, OP_initV, Vio_general_N, Vio_general_C)
+    SysData=Glob["SysData"]
+    ϵ = Glob["ϵ_Vio"]
+    CCT=Glob["CCT"]
 
     ramp = abs.(OP_initV["PG"][2:end, :] - OP_initV["PG"][1:end-1, :])
     Act_RampN = [zeros(size(ramp, 2))'; ramp]

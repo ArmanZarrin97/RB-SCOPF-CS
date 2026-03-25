@@ -119,6 +119,137 @@ function Set_global_parameters(Test_Sys)
     # # SysData["Line"].RATE_A[754] /=0.3
     # # Mode="Preventive"
 end
+
+function Set_global_parameters1(Test_Sys)
+
+    errortype="Normal"
+    Path= "Test Systems/"*Test_Sys*"Data/"
+    SysData=SysData_Reader(Path)
+    # ProfileCanvas.@profview SysData=SysData_Reader(Path)
+    Td=SysData["Base_MVA"]."Td"[1] ## Time duration in Day-ahead
+    Inc_coef=SysData["Base_MVA"]."Inc_coef"[1] ## FL Increase coefficient
+    Dec_coef=SysData["Base_MVA"]."Dec_coef"[1] ## FL Decrease coefficient
+    conprob_=SysData["Base_MVA"]."conprob"[1] ## each Contingency probability
+    SBase=SysData["Base_MVA"]."base_MVA"[1] ## Base MVA
+    Mode=SysData["Base_MVA"]."Mode"[1]   ## Mode of Secuirty: Preventive or Corrective
+    LSpermit=SysData["Base_MVA"]."LSGCpermit"[1] ## Permit of Load Shedding in Contingency cases
+    nTS=SysData["Base_MVA"]."nTS"[1] ## Number of Time periods in one hour in Real-time
+    nP=SysData["Base_MVA"]."nP"[1] ## size of look-ahead Horizon in Real-time in Hours
+    CCT=1/nTS; ## Time duration in Real-time in hours
+    ϵ=1e-3
+    v_relax_factor_Line_min = 0;
+    v_relax_factor_Line_max = 0;
+        #################
+            #modifications
+            if Test_Sys=="Polish/"
+                gout=findall(x-> (x."Q_max (pu)"-x."Q_min (pu)")<=0.01 ,eachrow(SysData["Gen"]))
+                for i in eachrow(SysData["Gen"])
+                    if i."P_min (pu)"!= i."P_max (pu)"
+                        i."P_min (pu)"*=0.9
+                        i."P_max (pu)"*=1.1
+                    end
+                    # if i."Q_max (pu)">=0
+                    #     i."Q_max (pu)"*=1.5
+                    # end
+                    # if i."Q_min (pu)"<=0
+                    #     i."Q_min (pu)"*=1.5
+                    # end
+                end
+                SysData["Bus"][SysData["Gen"][gout,:Bus],:Bus_Type].=1
+                SysData["Gen"]=SysData["Gen"][Not(gout),:]
+                SysData["Gen"].G_N .= 1: size(SysData["Gen"],1)
+                # SysData["Gen"].Ramp.*=3
+                # SysData["ConL"]=SysData["ConL"][1:2,:]
+            end
+
+
+            if Test_Sys=="2737/"
+                # SysData["Gen"].cost_b ./=100
+                actline=findall(x->x==1,SysData["Line"]."br_status")
+                SysData["Line"]=SysData["Line"][actline,:]
+                SysData["Line"].Line_N .= 1: size(SysData["Line"],1)
+                SysData["ConL"]."#"=[findall(x-> x.From==x1.From && x.To==x1.To,eachrow(SysData["Line"]))[1] for x1 in eachrow(SysData["ConL"])]
+                lineindex=findall(x-> x>1.0, SysData["Line"].RATE_A)
+                SysData["Line"].RATE_A .*=10
+                # SysData["Line"]."g (pu)" .*=10
+                # SysData["Line"]."b (pu)" .*=10
+                SysData["Line"].RATE_A[lineindex] .*= (0.6/10)
+                SysData["Line"]."g (pu)"[lineindex] .*= (0.6)
+                SysData["Line"]."b (pu)"[lineindex] .*= (0.6)
+
+                # admittance= @. complex(SysData["Line"]."g (pu)", SysData["Line"]."b (pu)")
+                # Z= 1 ./ admittance
+                # threshold = 1e-4
+                # Z .= complex.(max.(real(Z), threshold), max.(imag(Z), threshold))
+                # newadmittance= 1 ./Z
+                # SysData["Line"]."g (pu)"=real(newadmittance)
+                # SysData["Line"]."b (pu)"=imag(newadmittance)
+
+                #
+                # gout=findall(x-> x."Q_max (pu)"==x."Q_min (pu)" && x."P_max (pu)" == x."P_min (pu)",eachrow(SysData["Gen"]))
+                gout=findall(x-> x."Q_max (pu)"==x."Q_min (pu)" ,eachrow(SysData["Gen"]))
+                SysData["Bus"][SysData["Gen"][gout,:Bus],:Bus_Type].=1
+                SysData["Gen"]=SysData["Gen"][Not(gout),:]
+                SysData["Gen"].G_N .= 1: size(SysData["Gen"],1)
+                for i in eachrow(SysData["Gen"])
+                    if i."P_min (pu)"!= i."P_max (pu)"
+                        i."P_min (pu)"/=2
+                        i."P_max (pu)"*=2
+                    end
+                end
+                SysData["Gen"].gen_step = (SysData["Gen"]."P_max (pu)"-SysData["Gen"]."P_min (pu)")/5
+            end
+        #################
+    ################################### Profile Reader #################################
+    True_Profile = True_Profile_Reader(Path) # Read Real profiles
+    ## new Profile generation ##
+    Profile_Generator(Path, CCT, nTS, nP, new_profile,True_Profile,errortype)
+    ## Read Profiles ##
+    Profile_Data= Profile_Reader(Path)
+    ######################----------------------------------------#######################
+    ######################----------------Initialization----------#######################
+    Init_Data=InitData_Reader(SBase, SysData, Path,["Zero"])
+    ######################----------------------------------------#######################
+    conprob_=0.05;
+    TRfree=0.0
+    TRfreeC=0.0
+    relaxpermit= false
+    InitialTRB=1e-4
+    InitialTR=3.0
+    Adaptive_TRB=[0.0001,0.1,0.5,1]
+    Adaptive_TR=[[1.0,0.001], [0.5,0.0005], [0.25,0.0002], [0.1,0.0001], [0.05,0.00002], [0.025,0.00001],[0.01,0.00001]] #for 5bus
+    filter_factor=[0.7,0.7,0.8,0.9,1,1,1]
+    Cascade_Opt= true
+    Risk_cascade= true
+    loadbusinjection="false"
+    # I_relax=1.037
+    I_relax=1.4
+    Glob=Dict(
+        "Path"=>Path,
+        "SysData"=>SysData,
+        "Profile_Data"=>Profile_Data,
+        "ϵ_Vio"=>ϵ,
+        "CCT"=>CCT,
+        "conprob_"=>conprob_,
+        "Cascade_Opt"=>Cascade_Opt,
+        "Risk_cascade"=>Risk_cascade,
+        "nTL"=>nTL,
+        "Td"=>Td,
+        "Init_Data"=>Init_Data,
+        "loadbusinjection"=>loadbusinjection,
+        "errortype"=>errortype,
+        "Mode"=>Mode,
+        "Inc_coef"=>Inc_coef,
+        "Dec_coef"=>Dec_coef,
+        "LSpermit"=>LSpermit,
+        "I_relax"=>I_relax,
+        "Adaptive_TR"=>Adaptive_TR,
+        "Adaptive_TRB"=>Adaptive_TRB,
+        "filter_factor"=>filter_factor,
+    )
+    return Glob
+end
+
 function SysData_Reader(Path::String)
     data=["Gen","RES", "Load", "Line", "Bus", "ConL", "ConG", "Trans", "Shunt","ESS","Base_MVA"]
     SysData=Dict{String,DataFrame}()
@@ -132,13 +263,13 @@ function SysData_Reader(Path::String)
     return SysData
 end
 
-function InitData_Reader(Path,Stage)
-    if "Zero" in Stage  Init_Data=init_zero(nTL) end
+function InitData_Reader(SBase, SysData, Path,Stage)
+    if "Zero" in Stage  Init_Data=init_zero(SBase,SysData, Path, nTL) end
     initdata=["QG","PG","Pinc","Pdec","UE","Pcurt","Pcurtc","Pshed","Pch","Pdis","soc","Tcost","Vmag","Vang"]
     Init_Data=Dict()
     for y in Stage
         Init_Data[y]=Dict()
-        if y=="Zero"  Init_Data[y]=init_zero(nTL)
+        if y=="Zero"  Init_Data[y]=init_zero(SBase,SysData, Path, nTL)
         else
             for x in initdata
                 try Init_Data[y][x]= ods_read(Path*y,sheetName=x, retType= "DataFrame")
@@ -151,7 +282,7 @@ function InitData_Reader(Path,Stage)
     return Init_Data
 end
 
-function init_zero(nTL)
+function init_zero(SBase, SysData, Path, nTL)
 
     name=Path*"Zero"
     outlist=["PG", "QG","Pinc","Pdec","UE","Pcurt","Pcurtc","Pshed","Pch","Pdis","soc","Tcost","Vmag","Vang"];
@@ -187,18 +318,23 @@ function Profile_Reader(Path)
     return Profile_Data
 end
 
-function Profile_Generator(new_profile,True_Profile)
+function Profile_Generator(Path, CCT, nTS, nP, new_profile,True_Profile,errortype)
     if new_profile[1]
-        DA_Profiles=DA_Profile_Generator(True_Profile,nTL;ferror=errortype,Data_=[("Load",ERORR["DA"][1]),("Wind",ERORR["DA"][2])])
+        DA_Profiles=DA_Profile_Generator(Path,True_Profile,nTL;ferror=errortype,Data_=[("Load",ERORR["DA"][1]),("Wind",ERORR["DA"][2])])
     end
     if new_profile[2]
-        RT_Profiles=RT_Profile_Generator(True_Profile;ferror=errortype,Data=[("Load",ERORR["RT"][1]),("Wind",ERORR["RT"][2])])
+        RT_Profiles=RT_Profile_Generator(Path, CCT, nTS, nP, True_Profile;ferror=errortype,Data=[("Load",ERORR["RT"][1]),("Wind",ERORR["RT"][2])])
     elseif new_profile[2]=="same"
-        RT_Profiles=RT_Profile_Generator(DA_Profiles;ferror=errortype,Data=[("Load",0),("Wind",0)])
+        RT_Profiles=RT_Profile_Generator(Path, CCT, nTS, nP, DA_Profiles;ferror=errortype,Data=[("Load",0),("Wind",0)])
     end
 end
 
-function Data_Reader(;Ptype="DA",init="DA_OPF",t_0=0)
+function Data_Reader(Glob;Ptype="DA",init="DA_OPF",t_0=0)
+
+    SysData=Glob["SysData"]
+    Profile_Data=Glob["Profile_Data"]
+    Init_Data=Glob["Init_Data"]
+    nTP= Glob["nTL"]
 
     if Ptype=="DA" @assert init in ["DA_OPF","Zero"] && t_0==0 end
     if Ptype=="RT" @assert init in ["RT_OPF","DA_SCOPF"] && t_0>=1 end
@@ -419,7 +555,7 @@ end
 ####################### --------------------- #######################
 #####################################################################
 ####################### Profile maker Function #######################
-function True_Profile_Reader()
+function True_Profile_Reader(Path)
     profdata=["PL","QL","Wind"];realprof=Dict();
     for x in profdata
         try
@@ -431,7 +567,7 @@ function True_Profile_Reader()
 end
 
 
-function DA_Profile_Generator(True_Profile,nTS=24;ferror="Normal",Data_=[("Load",0.1),("Wind",0.1)])
+function DA_Profile_Generator(Path, True_Profile,nTS=24;ferror="Normal",Data_=[("Load",0.1),("Wind",0.1)])
 
     profdata=["PL","QL","Wind"];realprof=True_Profile;
     newprof=Dict();
@@ -457,7 +593,7 @@ function DA_Profile_Generator(True_Profile,nTS=24;ferror="Normal",Data_=[("Load"
     return newprof
 end
 
-function RT_Profile_Generator(True_Profile;MPC="linear",ferror="Normal",Data=[("Load",0.05),("Wind",0.05)])
+function RT_Profile_Generator(Path, CCT, nTS, nP, True_Profile;MPC="linear",ferror="Normal",Data=[("Load",0.05),("Wind",0.05)])
     TD=CCT
     RT_Profiles=DataFrame(t=1:nTL*nTS,PL=empty(DataFrame()),QL=empty(DataFrame()), Wind=empty(DataFrame()))
     profdata=["PL","QL","Wind"];realprof=True_Profile;
@@ -702,8 +838,9 @@ function Make_Iter_report(OP_NLP,LNS_cas0)
     return Iter_Rep
 end
 
-function Add_Iter_report!(Runcode,Iter_Rep,OP,cost,OptGap,Vio_Sum_N,Vio_Sum_C,Vio_general_N,Vio_general_C,iter,LNS_cas,sol_time,res_time,Filter,R_P=0,R_Q=0;Convergence=true)
-    # Runcode,Iter_Rep,out,OP,cost,OptGap,Vio_Sum_N,Vio_Sum_C,Vio_general_N,Vio_general_C,iter,sol_time,res_time=Runcode,Iter_Rep,init_out,Best_solution,mincost,minOptGap,Best_vio_sum_N,Best_vio_sum_C,Best_vio_general_N,Best_vio_general_C,iter,0,0
+function Add_Iter_report!(Glob,Iter_Rep,OP,cost,OptGap,Vio_Sum_N,Vio_Sum_C,Vio_general_N,Vio_general_C,iter,LNS_cas,sol_time,res_time,Filter,R_P=0,R_Q=0;Convergence=true)
+    # Glob,Iter_Rep,out,OP,cost,OptGap,Vio_Sum_N,Vio_Sum_C,Vio_general_N,Vio_general_C,iter,sol_time,res_time=Glob,Iter_Rep,init_out,Best_solution,mincost,minOptGap,Best_vio_sum_N,Best_vio_sum_C,Best_vio_general_N,Best_vio_general_C,iter,0,0
+    Runcode= Glob["Runcode"]
     max_N= [0.0,0.0, 0.0, 0.0]
     max_C=[0.0,0.0, 0.0, 0.0]
     mean_N=[0.0,0.0, 0.0, 0.0]
@@ -776,7 +913,10 @@ end
 #     return OP_init
 # end
 
-function find_total_redispatch!(Best_solution,OP_init0)
+function find_total_redispatch!(Glob, Best_solution,OP_init0)
+    nTP= Glob["nTL"]
+    SysData=Glob["SysData"]
+    
     maxnormalredispatchP=0
     maxconredispatchP=0
     Gres,ESSres,Curtres,Shedres,Incres= zeros(nTP,1),zeros(nTP,1),zeros(nTP,1),zeros(nTP,1),zeros(nTP,1)
@@ -1472,8 +1612,8 @@ function Worst_sens_IQ(Qinjlimit,S_IQ,raw,cl)
     return Sens_IQ
 end
 
-function read_iter_rep(Problem_Type,Runcode)
-        Result= ods_read(Pathplot*Problem_Type*string(Runcode),sheetName="General", retType= "DataFrame")
+function read_iter_rep(path,Problem_Type,Runcode)
+        Result= ods_read(path*Problem_Type*string(Runcode),sheetName="General", retType= "DataFrame")
         return Result
 end
 function read_iter_rep_temp(Problem_Type,Runcode)
@@ -3128,7 +3268,7 @@ function keep_K_percent_new_4D_V2!(B::BitArray{4}, S::AbstractArray{T,4}, percen
     return B
 end
 
-function findTR_Q_coupled2(V_0,Vmax_VP,Vmin_VP,VmaxIndex_P,VminIndex_P,Vmaxlimit0,Vminlimit0,S_VQ,QBound,raw,cl;Improve_Rate=5)
+function findTR_Q_coupled2(nTP, V_0,Vmax_VP,Vmin_VP,VmaxIndex_P,VminIndex_P,Vmaxlimit0,Vminlimit0,S_VQ,QBound,raw,cl;Improve_Rate=5)
     
     z0=sum((V_0-Vmaxlimit0).>=0)+sum(Vminlimit0-V_0.>=0)
     zmax=round(size(Vmaxlimit0)[1]*size(Vmaxlimit0)[2]*size(Vmaxlimit0)[3]*Q_con_percent)+1
@@ -3199,7 +3339,7 @@ function findTR_Q_coupled2(V_0,Vmax_VP,Vmin_VP,VmaxIndex_P,VminIndex_P,Vmaxlimit
     S_VQ_pos = max.(S_VQ_4D, 0.0)
     S_VQ_neg = min.(S_VQ_4D, 0.0)
 
-    TR_best=0.0
+    TR_best=1.0
     while TR_max - TR_min > 1e-7  # Stop when the range is small enough
         VQ_up1.=0
         VQ_dn1.=0
@@ -3291,14 +3431,20 @@ function findTR_Q_coupled2(V_0,Vmax_VP,Vmin_VP,VmaxIndex_P,VminIndex_P,Vmaxlimit
         #     best_acc=acc
         #     TR_best=TR
         # end
-        if  z_acc_Q <= y_acc_P && z_acc_P<=worst_vio  #&& max(z_acc_Q,z_acc_P) <= max(0.05,y_acc_Q)
-            best_acc=acc
-            TR_best=TR
-        end
+        # if  z_acc_Q <= y_acc_P && z_acc_P<=worst_vio  #&& max(z_acc_Q,z_acc_P) <= max(0.05,y_acc_Q)
+        #     best_acc=acc
+        #     TR_best=TR
+        # end
         if z_acc_P>=worst_vio  || ((y_acc_P<=max(0.001,maximum(Vmax_VP),maximum(-Vmin_VP))-0.001) && max(0,z_acc_Q)>=y_acc_Q && max(0,z_acc_P)>=y_acc_P) #|| z_acc_Q >= worst_vio #|| max(z_acc_P,z_acc_Q)>= max(0.05,y_acc_Q)
             TR_max = TR  # Reduce TR
+            if TR_max<TR_best
+                TR_best=TR_max
+                best_acc=max(0,acc)
+            end
         else
             TR_min = TR  # Increase TR
+            TR_best = TR
+            best_acc=max(0,acc)
         end
         iter+=1
     end
@@ -3308,7 +3454,7 @@ function findTR_Q_coupled2(V_0,Vmax_VP,Vmin_VP,VmaxIndex_P,VminIndex_P,Vmaxlimit
     return TR,VmaxIndex,VminIndex,max(0.0,z_acc_Q),[Qinj_up,Qinj_dn],worst_vio,report_TR
 end
 
-function findTR_P_coupled2(CascadeInfo, Base_TR_N,Base_TR_C,I2_0,Imaxlimit0,S_IP,V_0,Vmaxlimit0,Vminlimit0,S_VP,PBound,raw,cl,acc_V0)
+function findTR_P_coupled2(nTP,CascadeInfo, Base_TR_N,Base_TR_C,I2_0,Imaxlimit0,S_IP,V_0,Vmaxlimit0,Vminlimit0,S_VP,PBound,raw,cl,acc_V0)
 
     # acc_V0=0.05
     Imaxlimit0_sqrt=sqrt.(Imaxlimit0)
@@ -3346,7 +3492,7 @@ function findTR_P_coupled2(CascadeInfo, Base_TR_N,Base_TR_C,I2_0,Imaxlimit0,S_IP
     nBus      = raw["nBus"]
     nPActBus  = raw["nPActBus"]
     if !isempty(CascadeInfo)
-        tCascade=CascadeInfo["t_Cascade"][:,1]
+        tCascade=CascadeInfo["tcs_Cascade"][:,1]
         ovr_Sens_IP_up_cas= zeros(Float64, length(tCascade))
         ovr_Sens_IP_dn_cas= zeros(Float64, length(tCascade))
         vals_IP_cas= zeros(Float64, length(tCascade))
@@ -3394,11 +3540,12 @@ function findTR_P_coupled2(CascadeInfo, Base_TR_N,Base_TR_C,I2_0,Imaxlimit0,S_IP
     z_acc=0
     y_acc=0
     ramp_acc=0
-    TR_best=0.0
+    TR_best=1.0
     S_VP_pos = max.(S_VP_4D, 0.0)
     S_VP_neg = min.(S_VP_4D, 0.0)
     S_IP_pos = max.(S_IP_4D, 0.0)
     S_IP_neg = min.(S_IP_4D, 0.0)
+    if !isempty(CascadeInfo) firstind=findall(x->x[3]==1,CascadeInfo["tcs_Cascade"]) end
     while TR_max - TR_min > 1e-7 # Stop when the range is small enough
         if iter==0
             nothing
@@ -3416,7 +3563,7 @@ function findTR_P_coupled2(CascadeInfo, Base_TR_N,Base_TR_C,I2_0,Imaxlimit0,S_IP
         Pinj_dn=max.(-TR,PBound[2])
         Threads.@threads for t in 1:nTP
             if !isempty(CascadeInfo)
-                tcas=findall(x-> x==t,tCascade) else tcas=[] end
+                tcas=findall(x-> x[1]==t,tCascade) else tcas=[] end
             for c in 1:cl
                 # @views S_IP_tc = S_IP[t, c]  # Extract the 2D matrix (nBus × some_dim) only once
                 # @views S_VP_tc = S_VP[t,c]
@@ -3481,11 +3628,14 @@ function findTR_P_coupled2(CascadeInfo, Base_TR_N,Base_TR_C,I2_0,Imaxlimit0,S_IP
 
         ramp_acc=0
         y_acc=max(maximum(sqrt.(max.(0,I2_0+ovr_Sens_IP_dn./P_eff)).-Imaxlimit0_sqrt),-0.1)
+
+        # firstind
         if !isempty(CascadeInfo)
-            y_acc_cas=maximum(sqrt.(max.(0,CascadeInfo["diffVm"][:,1].*Imaxlimit0[CascadeInfo["line_Cascade"]].+ ovr_Sens_IP_dn_cas));init=0)
+            y_acc_cas=maximum(sqrt.(max.(0,CascadeInfo["diffVm"][firstind].*Imaxlimit0[CascadeInfo["line_Cascade"][firstind]].+ (ovr_Sens_IP_dn_cas[firstind]./P_eff)));init=0)
         else
             y_acc_cas=0
         end
+        # y_acc_cas=0
         acc=max(z_acc,y_acc)
         @. Imax_IP = I2_0 + ovr_Sens_IP_up/1
         @. atrisk = Imax_IP >= (Imaxlimit0_sqrt + max(z_acc,1e-4))^2
@@ -3503,11 +3653,15 @@ function findTR_P_coupled2(CascadeInfo, Base_TR_N,Base_TR_C,I2_0,Imaxlimit0,S_IP
         #     best_acc=max(0,acc)
         #     TR_best=TR
         # end
-        if (z_acc>=max(y_acc) || y_acc<=0 || z_acc_VP >= acc_V) && (z_acc>=y_acc_cas || max(0 , y_acc_cas)<=0)
+        if (z_acc>=max(y_acc) || y_acc<=0 || z_acc_VP >= acc_V) && (z_acc>=0 || max(0 , y_acc_cas)<=0)
             TR_max = TR  # Reduce TR
+            if TR_max<TR_best
+                TR_best=TR_max
+                best_acc=max(0,acc)
+            end
         else
             TR_min = TR  # Increase TR
-            TR_best=TR
+            TR_best = TR
             best_acc=max(0,acc)
         end
         iter+=1
@@ -3523,10 +3677,343 @@ function findTR_P_coupled2(CascadeInfo, Base_TR_N,Base_TR_C,I2_0,Imaxlimit0,S_IP
     return TR,ImaxIndex,Vmaxindex_P,Vminindex_P,max(0.0,z_acc),[Pinj_up,Pinj_dn],worst_vio,worst_vio_sqrt,report_TR,Vmax_VP,Vmin_VP,Imax_IP
 end
 
-    function LNS_cal(casreps)
-        nTP=size(casreps,1)
-        nCon=size(casreps,2)
-        LNSs= [casreps[t,i][end,"LNS_T"] for t in 1:nTP, i in 1:nCon]
-        LNS_cas=sum(maximum(LNSs,dims=2))
-        return LNS_cas,LNSs
+function LNS_cal(casreps)
+    nTP=size(casreps,1)
+    nCon=size(casreps,2)
+    LNSs= [casreps[t,i][end,"LNS_T"] for t in 1:nTP, i in 1:nCon]
+    LNS_cas=sum(maximum(LNSs,dims=2))
+    return LNS_cas,LNSs
+end
+
+function get_cascade_stage1(cascade_info)
+    fstage=findall(x-> x[3]==1,cascade_info["tcs_Cascade"][:,])
+    outInfo=Dict()
+    key=collect(keys(cascade_info))
+    for key in keys(cascade_info) 
+        if key != "LNS_Cascade"
+            if cascade_info[key] isa Vector
+                outInfo[key]=cascade_info[key][fstage]
+            else
+                outInfo[key]=cascade_info[key][fstage,:]
+            end
+        end
     end
+    return outInfo
+end
+
+# cascade_info=model[:CascadeInfo]
+function get_cascade_stage1_new(cascade_info)
+    fstage=findall(x-> x[3]==1,cascade_info["tcs_Cascade"][:,])
+    # cascade_info["tcs_Cascade"][fstage,1]
+    # i,j=last(enumerate(cascade_info["tcs_Cascade"][fstage,1]))
+    cashist=[(j[1], cascade_info["line_Cascade"][fstage,1][i], j[2]) for (i, j) in enumerate(cascade_info["tcs_Cascade"][fstage,1])]
+    return cashist
+end
+
+function Flow_ratio(raw, Lininit)
+    df=raw["Line"]
+    xθ=Lininit["θ_c_Line"] 
+    xV=Lininit["V_c_Line"]
+    cl=size(xθ,3)
+    nTP=size(xθ,1)
+    g=(df[:,"g (pu)"])'[ones(Int8,nTP),:,ones(Int8,cl)]
+    b=(df[:,"b (pu)"])'[ones(Int8,nTP),:,ones(Int8,cl)]
+    fb=@view df[:,"From"];tb=@view df[:,"To"]
+    gb2= (g.^2+b.^2)
+    ΔVline=xV[:,fb,:].^2 .+ xV[:,tb,:].^2 .- 2*(xV[:,fb,:].*xV[:,tb,:]).*cos.(xθ[:,fb,:].-xθ[:,tb,:])
+    I2_0=@. gb2*ΔVline
+    num=raw["ConL"]."#"
+    elem=raw["ConL"]."cont"
+    for i= 1:nTP    I2_0[CartesianIndex.(i, num, elem)] .= 0  end
+    Imaxlimit0=(df[:,"RATE_A"])'[ones(Int8,nTP),:,ones(Int8,cl)]
+    ratio =I2_0./Imaxlimit0.^2
+
+    return ratio
+end
+
+function analysis_C(casreps)
+    CasInst=findall(x-> size(x,1)>1, casreps)
+    CasNum=length(CasInst)
+    Cas_per=[x .- Glob["I_relax"] for x in (getindex.(casreps[CasInst], 1, "VM"))]
+    # Worst_Cas_per= maximum(maximum.(getindex.(casreps[CasInst], 1, "VM")))
+    if isempty(Cas_per) 
+        Worst_Cas_per=0
+        Mean_Cas_per=0
+        Worst_Cas_MW=0
+        Mean_Cas_MW=0
+    else
+        Worst_Cas_per=maximum(maximum(Cas_per))
+        Mean_Cas_per= mean(mean.(Cas_per))
+        Cas_MW=  [[Glob["SysData"]["Line"]."RATE_A"[x] for x in (getindex.(casreps[CasInst], 1, "LL"))][xx].*Cas_per[xx] for xx in 1:length(Cas_per)]
+        Worst_Cas_MW= maximum(maximum(Cas_MW))
+        Mean_Cas_MW= mean(mean.(Cas_MW))
+    end
+    return CasNum,Worst_Cas_per,Mean_Cas_per,Worst_Cas_MW,Mean_Cas_MW
+end
+
+function Make_cascade_Rep(casreps,OP_NLP,LNS_cas_NLP)
+    # V_1,θ_1,PG_1,QG_1,cost1=Matrix(out."mag_v"[1]),Matrix(out."ang_v"[1]),Matrix(out."PG"[1]),Matrix(out."QG"[1]),out."OFValue_WP"[1]
+    CasNum,Worst_Cas_per,Mean_Cas_per,Worst_Cas_MW,Mean_Cas_MW=analysis_C(casreps)
+    # cost1=OP_NLP["obj"]
+    Head=["Initialization";"Method";"Time";"Res_Time";"Iter";"TR";"LNS_Cas";"OptGap";"CasNum";"Worst_Cas_per";"Mean_Cas_per";"Worst_Cas_MW";"Mean_Cas_MW"]
+    Cascade_rep=DataFrame(repeat([[]],length(Head)), Head)
+    newrow=["-" "Non-Linear" 0 OP_NLP["time"] "-" "-" LNS_cas_NLP "-" CasNum Worst_Cas_per Mean_Cas_per Worst_Cas_MW Mean_Cas_MW]
+    push!(Cascade_rep,newrow[1,:])
+
+    return Cascade_rep
+end
+
+
+function Add_Cascade_Rep!(casreps,LNS_cas,Glob,Cascade_Rep,OP,cost,OptGap,iter,sol_time,res_time,R_P=0,R_Q=0;Convergence=true)
+    # Glob,Iter_Rep,out,OP,cost,OptGap,Vio_Sum_N,Vio_Sum_C,Vio_general_N,Vio_general_C,iter,sol_time,res_time=Glob,Iter_Rep,init_out,Best_solution,mincost,minOptGap,Best_vio_sum_N,Best_vio_sum_C,Best_vio_general_N,Best_vio_general_C,iter,0,0
+    Runcode= Glob["Runcode"]
+    if iter !=0 TRB=OP["FilterIndex"] else TR=0;TRB=0 end
+    TRB=LNS_cas
+    TR="["*join(string.(round.(OP["TR"], digits=4)),",")*"]"
+
+    CasNum,Worst_Cas_per,Mean_Cas_per,Worst_Cas_MW,Mean_Cas_MW =analysis_C(casreps)
+    newrow=[Linearization_INIT[Runcode[1]] Linearization_TYPE[Runcode[2]] sol_time res_time iter TR TRB OptGap CasNum Worst_Cas_per Mean_Cas_per Worst_Cas_MW Mean_Cas_MW]
+
+    push!(Cascade_Rep,newrow[1,:])
+    return Cascade_Rep
+end
+
+# struct GLOBParams
+#     Path::String
+#     SysData
+#     Td::Float64
+#     Inc_coef::Float64
+#     Dec_coef::Float64
+#     conprob::Float64
+#     SBase::Float64
+#     Mode
+#     LSpermit
+#     nTS::Int
+#     nP::Int
+#     CCT::Float64
+#     ϵ::Float64
+#     TRfree::Float64
+#     TRfreeC::Float64
+#     relaxpermit::Bool
+#     InitialTRB::Float64
+#     InitialTR::Float64
+#     Adaptive_TR
+#     filter_factor
+
+#     Profile_Data
+#     Init_Data
+# end
+
+# function build_params(Test_Sys)
+
+#     Path = "Test Systems/" * Test_Sys * "Data/"
+#     SysData = SysData_Reader(Path)
+
+#     Td       = SysData["Base_MVA"]."Td"[1]
+#     Inc_coef = SysData["Base_MVA"]."Inc_coef"[1]
+#     Dec_coef = SysData["Base_MVA"]."Dec_coef"[1]
+#     conprob  = SysData["Base_MVA"]."conprob"[1]
+#     SBase    = SysData["Base_MVA"]."base_MVA"[1]
+#     Mode     = SysData["Base_MVA"]."Mode"[1]
+#     LSpermit = SysData["Base_MVA"]."LSGCpermit"[1]
+#     nTS      = SysData["Base_MVA"]."nTS"[1]
+#     nP       = SysData["Base_MVA"]."nP"[1]
+#     CCT      = 1 / nTS
+#     ϵ        = 1e-3
+
+#     # === your system-specific modifications stay here ===
+#     if Test_Sys == "Polish/"
+#         gout = findall(x -> (x."Q_max (pu)" - x."Q_min (pu)") <= 0.01, eachrow(SysData["Gen"]))
+#         for i in eachrow(SysData["Gen"])
+#             if i."P_min (pu)" != i."P_max (pu)"
+#                 i."P_min (pu)" *= 0.9
+#                 i."P_max (pu)" *= 1.1
+#             end
+#         end
+#         SysData["Bus"][SysData["Gen"][gout, :Bus], :Bus_Type] .= 1
+#         SysData["Gen"] = SysData["Gen"][Not(gout), :]
+#         SysData["Gen"].G_N .= 1:size(SysData["Gen"], 1)
+#     end
+
+#     # Profiles
+#     True_Profile = True_Profile_Reader()
+#     Profile_Generator(new_profile, True_Profile)
+#     Profile_Data = Profile_Reader(Path)
+
+#     Init_Data = InitData_Reader(Path, ["Zero"])
+
+#     return GLOBParams(
+#         Path, SysData,
+#         Td, Inc_coef, Dec_coef, 0.05, SBase, Mode, LSpermit, nTS, nP, CCT, ϵ,
+#         0.0, 0.0, false, 1e-4, 3.0,
+#         [[1.0,0.001], [0.5,0.0005], [0.25,0.0002], [0.1,0.0001], [0.05,0.00002], [0.025,0.00001], [0.01,0.00001]],
+#         [0.7,0.7,0.8,0.9,1,1,1],
+#         Profile_Data,
+#         Init_Data
+#     )
+# end
+
+# function Set_global_parameters(Test_Sys)
+
+#     Path = "Test Systems/"*Test_Sys*"Data/"
+#     SysData = SysData_Reader(Path)
+#     # ProfileCanvas.@profview SysData=SysData_Reader(Path)
+#     Td = SysData["Base_MVA"]."Td"[1] ## Time duration in Day-ahead
+#     Inc_coef = SysData["Base_MVA"]."Inc_coef"[1] ## FL Increase coefficient
+#     Dec_coef = SysData["Base_MVA"]."Dec_coef"[1] ## FL Decrease coefficient
+#     conprob_ = SysData["Base_MVA"]."conprob"[1] ## each Contingency probability
+#     SBase = SysData["Base_MVA"]."base_MVA"[1] ## Base MVA
+#     Mode = SysData["Base_MVA"]."Mode"[1]   ## Mode of Secuirty: Preventive or Corrective
+#     LSpermit = SysData["Base_MVA"]."LSGCpermit"[1] ## Permit of Load Shedding in Contingency cases
+#     nTS = SysData["Base_MVA"]."nTS"[1] ## Number of Time periods in one hour in Real-time
+#     nP = SysData["Base_MVA"]."nP"[1] ## size of look-ahead Horizon in Real-time in Hours
+#     CCT = 1/nTS; ## Time duration in Real-time in hours
+#     ϵ = 1e-3
+#     v_relax_factor_Line_min = 0;
+#     v_relax_factor_Line_max = 0;
+#     ##################modifications
+#     if Test_Sys=="Polish/"
+#         gout=findall(x-> (x."Q_max (pu)"-x."Q_min (pu)")<=0.01 ,eachrow(SysData["Gen"]))
+#         for i in eachrow(SysData["Gen"])
+#             if i."P_min (pu)"!= i."P_max (pu)"
+#                 i."P_min (pu)"*=0.9
+#                 i."P_max (pu)"*=1.1
+#             end
+#             # if i."Q_max (pu)">=0
+#             #     i."Q_max (pu)"*=1.5
+#             # end
+#             # if i."Q_min (pu)"<=0
+#             #     i."Q_min (pu)"*=1.5
+#             # end
+#         end
+#         SysData["Bus"][SysData["Gen"][gout,:Bus],:Bus_Type].=1
+#         SysData["Gen"]=SysData["Gen"][Not(gout),:]
+#         SysData["Gen"].G_N .= 1: size(SysData["Gen"],1)
+#         # SysData["Gen"].Ramp.*=3
+#         # SysData["ConL"]=SysData["ConL"][1:2,:]
+#     end
+
+#     if Test_Sys=="2737/"
+#         # SysData["Gen"].cost_b ./=100
+#         actline=findall(x->x==1,SysData["Line"]."br_status")
+#         SysData["Line"]=SysData["Line"][actline,:]
+#         SysData["Line"].Line_N .= 1: size(SysData["Line"],1)
+#         SysData["ConL"]."#"=[findall(x-> x.From==x1.From && x.To==x1.To,eachrow(SysData["Line"]))[1] for x1 in eachrow(SysData["ConL"])]
+#         lineindex=findall(x-> x>1.0, SysData["Line"].RATE_A)
+#         SysData["Line"].RATE_A .*=10
+#         # SysData["Line"]."g (pu)" .*=10
+#         # SysData["Line"]."b (pu)" .*=10
+#         SysData["Line"].RATE_A[lineindex] .*= (0.6/10)
+#         SysData["Line"]."g (pu)"[lineindex] .*= (0.6)
+#         SysData["Line"]."b (pu)"[lineindex] .*= (0.6)
+
+#         # admittance= @. complex(SysData["Line"]."g (pu)", SysData["Line"]."b (pu)")
+#         # Z= 1 ./ admittance
+#         # threshold = 1e-4
+#         # Z .= complex.(max.(real(Z), threshold), max.(imag(Z), threshold))
+#         # newadmittance= 1 ./Z
+#         # SysData["Line"]."g (pu)"=real(newadmittance)
+#         # SysData["Line"]."b (pu)"=imag(newadmittance)
+
+#         #
+#         # gout=findall(x-> x."Q_max (pu)"==x."Q_min (pu)" && x."P_max (pu)" == x."P_min (pu)",eachrow(SysData["Gen"]))
+#         gout=findall(x-> x."Q_max (pu)"==x."Q_min (pu)" ,eachrow(SysData["Gen"]))
+#         SysData["Bus"][SysData["Gen"][gout,:Bus],:Bus_Type].=1
+#         SysData["Gen"]=SysData["Gen"][Not(gout),:]
+#         SysData["Gen"].G_N .= 1: size(SysData["Gen"],1)
+#         for i in eachrow(SysData["Gen"])
+#             if i."P_min (pu)"!= i."P_max (pu)"
+#                 i."P_min (pu)"/=2
+#                 i."P_max (pu)"*=2
+#             end
+#         end
+#         SysData["Gen"].gen_step = (SysData["Gen"]."P_max (pu)"-SysData["Gen"]."P_min (pu)")/5
+#     end
+#     #################
+
+#     ################################### Profile Reader #################################
+#     True_Profile = True_Profile_Reader() # Read Real profiles
+#     ## new Profile generation ##
+#     Profile_Generator(new_profile,True_Profile)
+#     ## Read Profiles ##
+#     Profile_Data = Profile_Reader(Path)
+#     ######################----------------------------------------#######################
+#     ######################----------------Initialization----------#######################
+#     Init_Data=InitData_Reader(Path,["Zero"])
+#     ######################----------------------------------------#######################
+#     conprob_=0.05;
+#     TRfree = 0.0
+#     TRfreeC = 0.0
+#     relaxpermit = false
+#     InitialTRB = 1e-4
+#     InitialTR = 3.0
+#     # global Adaptive_TR=[0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 3.0]
+#     Adaptive_TRB=[0.0001,0.1,0.5,1]
+#     # global Adaptive_TR=[3.0, 1.0, 0.5, 0.1, 0.05, 0.01, 0.005] #for 5bus
+#     Adaptive_TR=[[1.0,0.001], [0.5,0.0005], [0.25,0.0002], [0.1,0.0001], [0.05,0.00002], [0.025,0.00001],[0.01,0.00001]] #for 5bus
+#     filter_factor=[0.7,0.7,0.8,0.9,1,1,1]
+
+#     # # SysData["Load"]."Pd (pu)" .*= 1.2
+#     # # SysData["Load"]."Qd (pu)" .*= 1.2
+#     # # SysData["Line"].RATE_A.*=0.65
+#     # # SysData["Line"]."g (pu)" .*= 0.65
+#     # # SysData["Line"]."b (pu)" .*=0.65
+#     # # SysData["Line"]."b_sh (pu)" .*=0.65
+#     # # SysData["Line"].RATE_A[771:772]./=0.3
+#     # # SysData["Line"].RATE_A[1325] /= 0.3
+#     # # SysData["Line"].RATE_A[655] /=0.3
+#     # # SysData["Line"].RATE_A[922] /=0.3
+#     # # SysData["Line"].RATE_A[923] /=0.3
+#     # # SysData["Line"].RATE_A[2606] /=0.3
+#     # # SysData["Line"].RATE_A[754] /=0.3
+#     # # Mode="Preventive"
+#  return GLOBParams(
+#         Path, SysData, Td, Inc_coef, Dec_coef, conprob_, SBase, Mode, LSpermit, nTS, nP, CCT, ϵ,
+#         v_relax_factor_Line_min, v_relax_factor_Line_max, TRfree, TRfreeC, relaxpermit, InitialTRB, InitialTR, Adaptive_TRB, Adaptive_TR,
+#         filter_factor,Profile_Data,Init_Data
+#     )
+# end
+
+# struct GLOBParams
+#     Path::String
+#     SysData
+#     Td::Float64
+#     Inc_coef::Float64
+#     Dec_coef::Float64
+#     conprob_::Float64
+#     SBase::Float64
+#     Mode
+#     LSpermit
+#     nTS::Int
+#     nP::Int
+#     CCT::Float64
+#     ϵ::Float64
+#     v_relax_factor_Line_min::Float64
+#     v_relax_factor_Line_max::Float64
+#     TRfree::Float64
+#     TRfreeC::Float64
+#     relaxpermit::Bool
+#     InitialTRB::Float64
+#     InitialTR::Float64
+#     Adaptive_TRB
+#     Adaptive_TR
+#     filter_factor
+
+#     Profile_Data
+#     Init_Data
+# end
+
+# struct RunConfig
+#     Problem_Type::String
+#     Ptype_::String
+#     Cascade_Opt::Bool
+#     Risk_cascade::Bool
+#     Test_Sys::String
+#     nTL::Int
+#     Report::String
+#     ERORR::Dict
+#     new_profile::Vector{Bool}
+#     printlevel::Vector{Int}
+#     loadbusinjection::String
+#     errortype::String
+# end
