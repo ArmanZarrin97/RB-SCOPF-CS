@@ -3435,7 +3435,9 @@ function findTR_Q_coupled2(nTP, V_0,Vmax_VP,Vmin_VP,VmaxIndex_P,VminIndex_P,Vmax
         #     best_acc=acc
         #     TR_best=TR
         # end
-        if z_acc_P>=worst_vio  || ((y_acc_P<=max(0.001,maximum(Vmax_VP),maximum(-Vmin_VP))-0.001) && max(0,z_acc_Q)>=y_acc_Q && max(0,z_acc_P)>=y_acc_P) #|| z_acc_Q >= worst_vio #|| max(z_acc_P,z_acc_Q)>= max(0.05,y_acc_Q)
+        if z_acc_P>=worst_vio  || ((y_acc_P<=max(0.001,maximum(Vmax_VP),maximum(-Vmin_VP))-0.001) && max(0,z_acc_Q)>=y_acc_Q && (max(0,z_acc_P)>=y_acc_P || (y_acc_P<= max(0.1,maximum(Vmax_VP),maximum(-Vmin_VP))-0.1))) #|| z_acc_Q >= worst_vio #|| max(z_acc_P,z_acc_Q)>= max(0.05,y_acc_Q)
+        # if z_acc_P>=worst_vio  || ((y_acc_P<=max(0.001,maximum(Vmax_VP),maximum(-Vmin_VP))-0.001) && max(0,z_acc_Q)>=y_acc_Q && (max(0,z_acc_P)>=y_acc_P )) #|| z_acc_Q >= worst_vio #|| max(z_acc_P,z_acc_Q)>= max(0.05,y_acc_Q)
+
             TR_max = TR  # Reduce TR
             if TR_max<TR_best
                 TR_best=TR_max
@@ -3443,8 +3445,8 @@ function findTR_Q_coupled2(nTP, V_0,Vmax_VP,Vmin_VP,VmaxIndex_P,VminIndex_P,Vmax
             end
         else
             TR_min = TR  # Increase TR
-            TR_best = TR
-            best_acc=max(0,acc)
+            # TR_best = TR
+            # best_acc=max(0,acc)
         end
         iter+=1
     end
@@ -3631,7 +3633,7 @@ function findTR_P_coupled2(nTP,CascadeInfo, Base_TR_N,Base_TR_C,I2_0,Imaxlimit0,
 
         # firstind
         if !isempty(CascadeInfo)
-            y_acc_cas=maximum(sqrt.(max.(0,CascadeInfo["diffVm"][firstind].*Imaxlimit0[CascadeInfo["line_Cascade"][firstind]].+ (ovr_Sens_IP_dn_cas[firstind]./P_eff)));init=0)
+            y_acc_cas=maximum(sqrt.(max.(0,CascadeInfo["diffVm"][firstind].*Imaxlimit0[CascadeInfo["line_Cascade"][firstind]].+ (ovr_Sens_IP_dn_cas[firstind]./(2))));init=0)
         else
             y_acc_cas=0
         end

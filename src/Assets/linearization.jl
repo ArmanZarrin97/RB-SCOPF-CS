@@ -576,11 +576,14 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
     LNS_cas=LNS_cas0
 
     h_cas=DataFrame()
+    h_cas2=DataFrame()
+    casreps2=DataFrame()
     cas_hist=[]
     Runcode= Glob["Runcode"]
     # Glob["Cascade_Opt"]=true
     Glob["Risk_cascade"]= false
     Cascade_Opt=Glob["Cascade_Opt"]
+    # Cascade_Opt=false
     # Glob["I_relax"]=1.1
     Cascade_Rep=Make_cascade_Rep(casreps_NLP,OP_NLP,LNS_cas_NLP)
     Cascade_Rep=Add_Cascade_Rep!(casreps,LNS_cas,Glob,Cascade_Rep,Best_solution,mincost,minOptGap,iter,0,0,[[0 0] [0 0] [0 0] [0 0]])
@@ -729,7 +732,11 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
                         println("slk_cont_Q:",value.(model[:slk_Cont1]))
                         if Cascade_Opt
                             println("slk_cascade_LP:",value.(model[:cascade_penalty]))
-                            println("Worst_slk_cascade:",value.(model[:Worst_slk_cas]))
+                            try
+                                println("Worst_slk_cascade:",value.(model[:Worst_slk_cas]))
+                            catch e
+                                println("Worst_slk_cascade: Not defined")
+                            end
                         end
 
                     # value.(model[:slk_cas])
@@ -888,9 +895,13 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
     push!(Cascade_Rep,repeat(["end"],size(Cascade_Rep,2)))
     # Iter_Rep2=deepcopy(Iter_Rep)
     # Iter_Rep[1:7,:]
-    ods_write(Glob["Path"]*"../Result/Iter_Report/"*Problem_Type*string(Runcode),Dict(("General",1,1)=>Iter_Rep))
-    ods_write(Glob["Path"]*"../Result/Cascade_Report/"*Problem_Type*string(Runcode)*"CR",Dict(("General",1,1)=>Cascade_Rep))
-
+    if Cascade_Opt
+        ods_write(Glob["Path"]*"../Result/Iter_Report/CA_"*Problem_Type*string(Runcode),Dict(("General",1,1)=>Iter_Rep))
+        ods_write(Glob["Path"]*"../Result/Cascade_Report/CA_"*Problem_Type*string(Runcode)*"CR",Dict(("General",1,1)=>Cascade_Rep))
+    else
+        ods_write(Glob["Path"]*"../Result/Iter_Report/"*Problem_Type*string(Runcode),Dict(("General",1,1)=>Iter_Rep))
+        ods_write(Glob["Path"]*"../Result/Cascade_Report/"*Problem_Type*string(Runcode)*"CR",Dict(("General",1,1)=>Cascade_Rep))
+    end
     # ods_write(Path*"../Result/Iter_Report/"*Problem_Type*string(Runcode),Dict(("General",1,1)=>Iter_Rep))
     return mincost,Best_solution,Best_Iter,min_infmax_N,min_infmax_C,minOptGap,Best_vio_general_N,Best_vio_sum_N,Best_vio_general_C,Best_vio_sum_C,Best_sol_time,Best_res_time
 end
