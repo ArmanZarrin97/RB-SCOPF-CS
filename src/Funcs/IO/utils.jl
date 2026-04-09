@@ -320,7 +320,7 @@ end
 
 function Profile_Generator(Path, CCT, nTS, nP, new_profile,True_Profile,errortype)
     if new_profile[1]
-        DA_Profiles=DA_Profile_Generator(Path,True_Profile,nTL;ferror=errortype,Data_=[("Load",ERORR["DA"][1]),("Wind",ERORR["DA"][2])])
+        DA_Profiles=DA_Profile_Generator(Path,True_Profile,TS,nTL;ferror=errortype,Data_=[("Load",ERORR["DA"][1]),("Wind",ERORR["DA"][2])])
     end
     if new_profile[2]
         RT_Profiles=RT_Profile_Generator(Path, CCT, nTS, nP, True_Profile;ferror=errortype,Data=[("Load",ERORR["RT"][1]),("Wind",ERORR["RT"][2])])
@@ -567,7 +567,7 @@ function True_Profile_Reader(Path)
 end
 
 
-function DA_Profile_Generator(Path, True_Profile,nTS=24;ferror="Normal",Data_=[("Load",0.1),("Wind",0.1)])
+function DA_Profile_Generator(Path, True_Profile,TS,nTS=24;ferror="Normal",Data_=[("Load",0.1),("Wind",0.1)])
 
     profdata=["PL","QL","Wind"];realprof=True_Profile;
     newprof=Dict();
@@ -576,9 +576,9 @@ function DA_Profile_Generator(Path, True_Profile,nTS=24;ferror="Normal",Data_=[(
         elseif ferror=="Uniform"    noise=(P*(2rand(nTS).-1)) end
 
         if D=="Load"
-            for v in ["PL","QL"]   newprof[v]=round.((noise.+1).*realprof[v][1:nTS,:],digits=4) end
+            for v in ["PL","QL"]   newprof[v]=round.((noise.+1).*realprof[v][TS:TS+nTS-1,:],digits=4) end
         elseif D=="Wind"
-            newprof[D]=round.((noise.+1).*realprof[D][1:nTS,:],digits=4)
+            newprof[D]=round.((noise.+1).*realprof[D][TS:TS+nTS-1,:],digits=4)
         end
     end
 
@@ -1612,8 +1612,8 @@ function Worst_sens_IQ(Qinjlimit,S_IQ,raw,cl)
     return Sens_IQ
 end
 
-function read_iter_rep(path,Problem_Type,Runcode)
-        Result= ods_read(path*Problem_Type*string(Runcode),sheetName="General", retType= "DataFrame")
+function read_iter_rep(path,Problem_Type,Runcode,annex="")
+        Result= ods_read(path*Problem_Type*string(Runcode)*annex,sheetName="General", retType= "DataFrame")
         return Result
 end
 function read_iter_rep_temp(Problem_Type,Runcode)
@@ -3268,6 +3268,18 @@ function keep_K_percent_new_4D_V2!(B::BitArray{4}, S::AbstractArray{T,4}, percen
     return B
 end
 
+function keep_K_percent_new_4D_row_V2!(B::BitArray{4}, S::AbstractArray{T,4}, percent::Float64=0.8) where T
+    @inbounds for j1 in axes(S,1), j3 in axes(S,3), j4 in axes(S,4)
+        th = percent * maximum(@view S[j1, :, j3, j4])
+        @inbounds @simd for j2 in axes(S,2)
+            if S[j1, j2, j3, j4] >= th
+                B[j1, j2, j3, j4] = true
+            end
+        end
+    end
+    return B
+end
+
 function findTR_Q_coupled2(nTP, V_0,Vmax_VP,Vmin_VP,VmaxIndex_P,VminIndex_P,Vmaxlimit0,Vminlimit0,S_VQ,QBound,raw,cl;Improve_Rate=5)
     
     z0=sum((V_0-Vmaxlimit0).>=0)+sum(Vminlimit0-V_0.>=0)
@@ -3377,9 +3389,22 @@ function findTR_Q_coupled2(nTP, V_0,Vmax_VP,Vmin_VP,VmaxIndex_P,VminIndex_P,Vmax
         @views @. VQ_dn = -ovr_Sens_VQ_dnmat - DV_dn_4D
         keep_K_percent_new_4D_V2!(VQ_up1,VQ_up,0.0)
         keep_K_percent_new_4D_V2!(VQ_dn1,VQ_dn,0.0)
+        
+        
+        # keep_K_percent_new_4D_V2!(VQ_up1,ovr_Sens_VQ_upmat,0.95)
+        # keep_K_percent_new_4D_V2!(VQ_dn1,VQ_dn,0.0)
 
-        keep_top_4D_V2!(VQ_up1,VQ_up,10)
-        keep_top_4D_V2!(VQ_dn1,VQ_dn,10)
+        #previous
+            keep_top_4D_V2!(VQ_up1,VQ_up,10)
+            keep_top_4D_V2!(VQ_dn1,VQ_dn,10)
+        # #new
+
+        #     keep_K_percent_new_4D_row_V2!(VQ_up1,ovr_Sens_VQ_upmat,0.999)
+        #     keep_K_percent_new_4D_row_V2!(VQ_dn1,-ovr_Sens_VQ_dnmat,0.999)
+
+        #     keep_top_4D_V2!(VQ_up1,VQ_up,5)
+        #     keep_top_4D_V2!(VQ_dn1,VQ_dn,5)
+        #
         @. VQ_up1 |=S_VQ1
         @. VQ_dn1 |=S_VQ1
         @. ovr_Sens_VQ_upmat *= VQ_up1 
@@ -3435,7 +3460,7 @@ function findTR_Q_coupled2(nTP, V_0,Vmax_VP,Vmin_VP,VmaxIndex_P,VminIndex_P,Vmax
         #     best_acc=acc
         #     TR_best=TR
         # end
-        if z_acc_P>=worst_vio  || ((y_acc_P<=max(0.001,maximum(Vmax_VP),maximum(-Vmin_VP))-0.001) && max(0,z_acc_Q)>=y_acc_Q && (max(0,z_acc_P)>=y_acc_P || (y_acc_P<= max(0.1,maximum(Vmax_VP),maximum(-Vmin_VP))-0.1))) #|| z_acc_Q >= worst_vio #|| max(z_acc_P,z_acc_Q)>= max(0.05,y_acc_Q)
+        if z_acc_P>=worst_vio  || ((y_acc_P<=max(0.001,maximum(Vmax_VP),maximum(-Vmin_VP))-0.001) && max(0,z_acc_Q)>=y_acc_Q && (max(0,z_acc_P)>=y_acc_P) || z_acc_Q>=0) #|| (y_acc_P<= max(0.1,maximum(Vmax_VP),maximum(-Vmin_VP))-0.1))) #|| z_acc_Q >= worst_vio #|| max(z_acc_P,z_acc_Q)>= max(0.05,y_acc_Q)
         # if z_acc_P>=worst_vio  || ((y_acc_P<=max(0.001,maximum(Vmax_VP),maximum(-Vmin_VP))-0.001) && max(0,z_acc_Q)>=y_acc_Q && (max(0,z_acc_P)>=y_acc_P )) #|| z_acc_Q >= worst_vio #|| max(z_acc_P,z_acc_Q)>= max(0.05,y_acc_Q)
 
             TR_max = TR  # Reduce TR
@@ -3459,13 +3484,14 @@ end
 function findTR_P_coupled2(nTP,CascadeInfo, Base_TR_N,Base_TR_C,I2_0,Imaxlimit0,S_IP,V_0,Vmaxlimit0,Vminlimit0,S_VP,PBound,raw,cl,acc_V0)
 
     # acc_V0=0.05
+    
     Imaxlimit0_sqrt=sqrt.(Imaxlimit0)
     z0=0
     zmax=round(size(Imaxlimit0)[1]*size(Imaxlimit0)[2]*size(Imaxlimit0)[3]*P_con_percent)+1
     zmax_V=round(size(Vmaxlimit0)[1]*size(Vmaxlimit0)[2]*size(Vmaxlimit0)[3]*Q_con_percent_coupled)+1
     y=0
     z=0
-    TR=0;TR_min=0.0
+    TR=0.01;TR_min=0.01
     TR_max=5;
     V0_length= length(V_0)
     acc_V=max(0.01,min(acc_V0,max(maximum(V_0-Vmaxlimit0),maximum(-(V_0-Vminlimit0)))))
@@ -3547,7 +3573,10 @@ function findTR_P_coupled2(nTP,CascadeInfo, Base_TR_N,Base_TR_C,I2_0,Imaxlimit0,
     S_VP_neg = min.(S_VP_4D, 0.0)
     S_IP_pos = max.(S_IP_4D, 0.0)
     S_IP_neg = min.(S_IP_4D, 0.0)
-    if !isempty(CascadeInfo) firstind=findall(x->x[3]==1,CascadeInfo["tcs_Cascade"]) end
+    if !isempty(CascadeInfo) 
+        firstind=findall(x->x[3]==1,CascadeInfo["tcs_Cascade"]) 
+        I_relax=CascadeInfo["I_relax"]
+    end
     while TR_max - TR_min > 1e-7 # Stop when the range is small enough
         if iter==0
             nothing
@@ -3633,7 +3662,8 @@ function findTR_P_coupled2(nTP,CascadeInfo, Base_TR_N,Base_TR_C,I2_0,Imaxlimit0,
 
         # firstind
         if !isempty(CascadeInfo)
-            y_acc_cas=maximum(sqrt.(max.(0,CascadeInfo["diffVm"][firstind].*Imaxlimit0[CascadeInfo["line_Cascade"][firstind]].+ (ovr_Sens_IP_dn_cas[firstind]./(2))));init=0)
+            # y_acc_cas=maximum(sqrt.(max.(0,CascadeInfo["diffVm"][firstind].*Imaxlimit0[CascadeInfo["line_Cascade"][firstind]].+ (ovr_Sens_IP_dn_cas[firstind]./(2))));init=0)
+            y_acc_cas=maximum(sqrt.(max.(0, ((CascadeInfo["Vm_Cascade"][firstind].*Imaxlimit0_sqrt[CascadeInfo["line_Cascade"][firstind]]).^2)+(ovr_Sens_IP_dn_cas[firstind]./(P_eff))))- I_relax*Imaxlimit0_sqrt[CascadeInfo["line_Cascade"][firstind]];init=0)
         else
             y_acc_cas=0
         end
@@ -4019,3 +4049,35 @@ end
 #     loadbusinjection::String
 #     errortype::String
 # end
+
+
+function read_NLresult(path,Problem_Type,annex="")
+    # path=Pathplot*"CA_LSB/"
+    datadict=Dict()
+    for i in initp, m in method_code
+        try
+            raw=read_iter_rep(path,Problem_Type,(i,m),annex)
+            # fi=findfirst(x->x=="end",raw[:,1])
+            datadict[i,m]=coalesce.(raw[1:1,:],0)
+            # datadict[i,m]=read_iter_rep(Problem_Type,(i,m))[2:end-1,:]
+        catch
+            continue
+        end
+    end
+    return datadict
+end
+function read_result(path,Problem_Type,annex="")
+    # path=Pathplot*"Cascade_report/";annex="CR"
+    datadict=Dict()
+    for i in initp, m in method_code
+        try
+            raw=read_iter_rep(path,Problem_Type,(i,m),annex)
+            fi=findfirst(x->x=="end",raw[:,1])
+            datadict[i,m]=coalesce.(raw[2:fi-1,:],0)
+            # datadict[i,m]=read_iter_rep(Problem_Type,(i,m))[2:end-1,:]
+        catch
+            continue
+        end
+    end
+    return datadict
+end

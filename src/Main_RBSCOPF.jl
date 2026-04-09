@@ -29,7 +29,7 @@ include("Funcs/Cascading/Cascading_tool.jl")
 
 Problem_Type="SCOPF";Ptype_="DA";
 #---------------------Reading Input files
-Test_Sys="Nordic60/";nTL=24; Report="feasiblity"# temporary values
+Test_Sys="Nordic60/";nTL=1;TS=9; Report="feasiblity"# temporary values
 ERORR=Dict(); ERORR["DA"]=[0.00 0.00];ERORR["RT"]=[0.00 0.00];new_profile=[true true];printlevel=[1 0]; #[terminal print, ods print];
 Glob=Set_global_parameters1(Test_Sys)
 
@@ -101,13 +101,20 @@ relaxpermit=true
 # for Init in collect(values(Linearization_INIT))
 #     Init_OP[Init]=Initialize(Glob,Init,init_out,init_model,DA_out,DA_model)
 # end
+
+# Init_OP_SC,SLP_Rep_SC=Init_OP,SLP_Rep
+# BSON.@save Glob["Path"]*"../Result/NL_Solution_SCOPF_t9.bson" Init_OP_SC SLP_Rep_SC
+
 # # BSON.@save Path*"../Result/NL_Solution_OPF.bson" Init_OP SLP_Rep
 # # Init_OP_SC=Init_OP
 # # SLP_Rep_SC= SLP_Rep
 # BSON.@save Glob["Path"]*"../Result/NL_Solution_SCOPF.bson" Init_OP_SC SLP_Rep_SC
 
 # BSON.@load Path*"../Result/NL_Solution_OPF.bson" Init_OP SLP_Rep
-BSON.@load Glob["Path"]*"../Result/NL_Solution_SCOPF.bson" Init_OP_SC SLP_Rep_SC
+# BSON.@load Glob["Path"]*"../Result/NL_Solution_SCOPF.bson" Init_OP_SC SLP_Rep_SC
+# BSON.@load Glob["Path"]*"../Result/NL_Solution_SCOPF.bson" Init_OP_SC SLP_Rep_SC
+BSON.@load Glob["Path"]*"../Result/NL_Solution_SCOPF_t9.bson" Init_OP_SC SLP_Rep_SC
+
 # BSON.@load Path*"../Result/NL_Solution.bson" Init_OP SLP_Rep
 # insertcols!(SLP_Rep, :Max_N_redis, :Max_N_redisQ => ["-"], after=true)
 # insertcols!(SLP_Rep, :Max_C_redis, :Max_C_redisQ => ["-"], after=true)

@@ -137,7 +137,7 @@ function csc_i(bi, G, Ld, BAT, REN, Gcas)
         Gcas.Gt[gmain] = Gcas.Gt[gmain] + G[gi, 2] 
         G[gi, 2] .= zeros(length(gi), 1)
         flag = 3
-    elseif sum(G_i[:, 2])+sum(Ren_i[:, "PG"])+sum(filter(x -> x > 0, Bat_i[:, "Ps"])) == 0 && sum(Ld_i[:, 2])-sum(filter(x -> x < 0, Bat_i[:, "Ps"])) == 0   # every thing off
+    elseif sum(G_i[:, 2])+sum(Ren_i[:, "PG"])+sum(filter(x -> x > 0, Bat_i[:, "Ps"]);init=0) == 0 && sum(Ld_i[:, 2])-sum(filter(x -> x < 0, Bat_i[:, "Ps"]);init=0) == 0   # every thing off
         flag = 4
     
     elseif fr2(G_i, Ld_i, BAT, REN) > df_maxmax || fr2(G_i, Ld_i, BAT, REN) < -df_minmin

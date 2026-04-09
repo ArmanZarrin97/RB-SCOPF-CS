@@ -583,7 +583,7 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
     # Glob["Cascade_Opt"]=true
     Glob["Risk_cascade"]= false
     Cascade_Opt=Glob["Cascade_Opt"]
-    # Cascade_Opt=false
+    Cascade_Opt=false
     # Glob["I_relax"]=1.1
     Cascade_Rep=Make_cascade_Rep(casreps_NLP,OP_NLP,LNS_cas_NLP)
     Cascade_Rep=Add_Cascade_Rep!(casreps,LNS_cas,Glob,Cascade_Rep,Best_solution,mincost,minOptGap,iter,0,0,[[0 0] [0 0] [0 0] [0 0]])
@@ -599,6 +599,9 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
                         OP,out,model=Optimizer(Glob, Linearization_TYPE[Runcode[2]],deepcopy(OP_init),casreps,h_cas)
                         # casreps[1,3]
                         # println("Worst_slk_cascade:",value.(model[:Worst_slk_cas]))
+
+                        # findmax(value.(model[:ΔPinjP_c_Line]-model[:ΔPinjN_c_Line]))
+                        # findmin(value.(model[:ΔPinjP_c_Line]-model[:ΔPinjN_c_Line]))
 
                         # OP,out,model=Optimizer(Glob, Linearization_TYPE[Runcode[2]],deepcopy(OP_init),nothing,h_cas)
                         # model[:Vm_Cascade_expr]
@@ -636,6 +639,27 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
                         # h_cas.Vio.-opt_cal_hist
                     else
                         OP,out,model=Optimizer(Glob, Linearization_TYPE[Runcode[2]],deepcopy(OP_init))
+                        # Plots.plot(value((model[:ΔPinjP_c_Line].+ model[:ΔPinjN_c_Line])[1,:,2]))
+                        # Plots.plot(value((model[:ΔQinjP_c_Line].+ model[:ΔQinjN_c_Line])[1,:,2]))
+                        
+                        # Plots.plot( OP["PG_c_Line"][1,:,2]-OP_init["PG_c_Line"][1,:,2])
+                        # Plots.plot!( OP_Valid["PG_c_Line"][1,:,2]-OP_init["PG_c_Line"][1,:,2])
+
+                        # Plots.plot( OP["QG_c_Line"][1,:,2]-OP_init["QG_c_Line"][1,:,2])
+                        # Plots.plot!( OP_Valid["QG_c_Line"][1,:,2]-OP_init["QG_c_Line"][1,:,2])
+                       
+
+                        # Plots.plot( OP["PG_c_Line"][1,:,2]-OP_init["PG_c_Line"][1,:,2])
+                        # Plots.plot( OP["QG_c_Line"][1,:,2]-OP_init["QG_c_Line"][1,:,2])
+                        
+                        # Plots.plot( OP_Valid["PG_c_Line"][1,:,2]-OP_init["PG_c_Line"][1,:,2])
+                        # Plots.plot( OP_Valid["QG_c_Line"][1,:,2]-OP_init["QG_c_Line"][1,:,2])
+                        
+
+                        # Plots.plot( OP["PG_c_Line"][1,:,2]-OP_Valid["PG_c_Line"][1,:,2])
+                        # Plots.plot( OP["QG_c_Line"][1,:,2]-OP_Valid["QG_c_Line"][1,:,2])
+                            
+                       
                     end
                     # value.(model[:slack_Cascade_LP])
                     # maximum(value.(model[:slack_Cascade_LP]))
@@ -743,7 +767,7 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
                     # value.(model[:cascade_penalty])
                     # value.(model[ob])
                     # objective_value(model)
-                    # value.(model[:slk_Vmin])
+                    # value.(model[:slk_Vmax_c])
                     # println("slk_normal:",value.(model[:slk_Norm]))
                     # println("slk_cont:",value.(model[:slk_Cont]))
                     # model[:slkDataFrame]["slkVmax_c"][557]
@@ -795,7 +819,7 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
             
             # model[:CNcascade_LP1]
             # OP["Pshed"][:,1872]
-            # Vio_general_C[17,10]
+            # Vio_general_C[1,18]
             # Vio_general_C[6,26]."abs"
             # Vio_general_N[14,1]
             # Vio_general_C[19,10]
@@ -1198,6 +1222,12 @@ function Set_TR_new2(nTP , Base_TR_N,Base_TR_C,SENSDict_All, I2_0, V_0, raw,PBou
     S_VP = SENSDict_All["S_VP"]
     S_VQ = SENSDict_All["S_VQ"]
 
+    # sum((value.(model[:ΔPinjP_c_Line]-model[:ΔPinjN_c_Line])[1,:,1]).*S_VP[1,2][38,:])
+    # sum((value.(model[:ΔQinjP_c_Line]-model[:ΔQinjN_c_Line])[1,:,1]).*S_VQ[1,2][38,:])
+
+    # Plots.plot((value.(model[:ΔQinjP_c_Line]-model[:ΔQinjN_c_Line])[1,:,1]).*S_VQ[1,2][38,:])
+
+    # V_0[1,38,2]
 
     TR_P,ImaxIndex,VmaxIndex_P,VminIndex_P,acc_I,Pinjlimit,P2worst_vio,Pworst_vio,report_TR_P,Vmax_VP,Vmin_VP,Imax_IP = findTR_P_coupled2( nTP, CascadeInfo, Base_TR_N,Base_TR_C,I2_0,Imaxlimit0,S_IP,V_0,Vmaxlimit0,Vminlimit0,deepcopy(S_VP),PBound,raw,cl,0.05)
     TR_Q,VmaxIndex,VminIndex,acc_V,Qinjlimit,Qworst_vio,report_TR_Q= findTR_Q_coupled2(nTP, V_0,Vmax_VP,Vmin_VP,VmaxIndex_P,VminIndex_P,Vmaxlimit0,Vminlimit0,deepcopy(S_VQ),QBound,raw,cl)

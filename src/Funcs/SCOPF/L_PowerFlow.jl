@@ -2333,7 +2333,7 @@ function Linear_SENS_CP_new(SCOPF,Vars,Parlist,nTP,raw::Dict{String, Any},States
             # Pcoef_V,Qcoef_V=filter_to_sparse_V_12([SENSDict["S_VP"][t,c][elems,:],SENSDict["S_VQ"][t,c][elems,:]],error,[TRact_1, TRact_1_C,TRact_2, TRact_2_C])
 
             # Pcoef_V=sparse(round.(SENSDict["S_VP"][t,c][elems,:],digits=5))
-            # Pcoef_V=sparse(round.(SENSDict["S_VQ"][t,c][elems,:],digits=5))
+            # Qcoef_V=sparse(round.(SENSDict["S_VQ"][t,c][elems,:],digits=5))
 
             # aa=hcat(Pcoef_V,Qcoef_V)[11,:]
             # bb=hcat(SENSDict["S_VP"][t,c][elems,:],SENSDict["S_VQ"][t,c][elems,:])[11,:]
@@ -2470,7 +2470,8 @@ function Sensitivity_constraints(Glob, LSCOPF,CascadeInfo,N_Var,C_Var,OPFon,raw,
 
     # TR=[1,0.2]
     # acc=0.0
-    # Indices[1]
+    # Indices[2][4:end]
+    
 
 
 

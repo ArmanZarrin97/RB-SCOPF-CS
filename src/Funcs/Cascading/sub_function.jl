@@ -1508,8 +1508,8 @@ function fr2(G, Ld, BAT, REN)
 
     Pd = sum(Ld[:, 2])
     Pg = sum(G[:, 2])
-    Pbat= sum(BAT[:, 2])
-    Pren= sum(REN[:, 5])
+    Pbat= sum(BAT[:, 2];init=0)
+    Pren= sum(REN[:, 5];init=0)
     ploss = 0.0
 
     slk = findall3(x -> x == 1, G[:, 12])

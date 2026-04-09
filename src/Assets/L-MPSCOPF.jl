@@ -79,6 +79,10 @@ function L_MPSCOPF(Glob,glob_input,Proffin,casreps,h_cas=DataFrame(); fixed_SOC_
     # push!(resu, (objective_value(SCOPF),value(SCOPF[:real_objective_cas]),value(SCOPF[:real_objective]),value(SCOPF[:cost_TR_relaxN]),value(SCOPF[:cost_TR_PenN]),value(SCOPF[:cost_TR_relaxC]),value(SCOPF[:cascade_penalty])))
 
     LSCOPF=Solve_P(LSCOPF)
+    # value.(LSCOPF[:CV2magexp])[1,38,1]
+    # LSCOPF[:CV2magexp][1,38,1]
+    # LSCOPF[:slkDataFrame]["slkVmax"]
+
     # LSCOPF[:TR]
     # # Plots.plot((value.(LSCOPF[:slk_cas])).data)
     # sum(SCOPF[:slk_cas].*CascadeInfo["LNS_tc"]).*coef6

@@ -66,7 +66,10 @@ function Solve_P(SCOPF)
     # println("Objective penalized: ", value(SCOPF[:real_objective]))
     println("Status:  ",termination_status(SCOPF))
     println("Objective value:  ", value(SCOPF[:real_objective]))
-    println("Objective value+Cas:  ", value(SCOPF[:real_objective_cas]))
+    try println("Objective value+Cas:  ", value(SCOPF[:real_objective_cas]))
+    catch
+        nothing 
+    end
     println("Solver Time:   ", JuMP.solve_time(SCOPF))
     return SCOPF
 end
@@ -834,7 +837,7 @@ function Cascade_L_PB( SCOPF::Model,nTP::Int64,raw::Dict{String, Any},casreps::M
 
     ΔPinj=SCOPF[:ΔPinjP]-SCOPF[:ΔPinjN]
     ΔQinj=SCOPF[:ΔQinjP] -SCOPF[:ΔQinjN]
-    diffVm= (Vm_Cascade.^2) .- ((I_relax-(ϵ_vm*10)).^2) 
+    diffVm= (Vm_Cascade.^2) .- ((I_relax-(ϵ_vm*1)).^2) 
     # println(keys(Lininit))
 
     @expression(SCOPF, Vm_Cascade_expr[k=1:length(line_Cascade)], Vm_Cascade[k])
@@ -860,7 +863,7 @@ function Cascade_L_PB( SCOPF::Model,nTP::Int64,raw::Dict{String, Any},casreps::M
         # end
     end
     # fix.(slk_cas, 1; force=true)
-    CascadeInfo=Dict("diffVm"=>diffVm,"tcs_Cascade"=>tcs_Cascade, "SENS_Cascade"=>SENS_Cascade, "line_Cascade"=>line_Cascade, "LNS_Cascade"=>LNS_Cascade, "LNS_tc"=>LNS_tc)
+    CascadeInfo=Dict("I_relax"=>I_relax,"Vm_Cascade"=> Vm_Cascade,"diffVm"=>diffVm,"tcs_Cascade"=>tcs_Cascade, "SENS_Cascade"=>SENS_Cascade, "line_Cascade"=>line_Cascade, "LNS_Cascade"=>LNS_Cascade, "LNS_tc"=>LNS_tc)
     SCOPF[:CascadeInfo]=CascadeInfo
 
     if !isempty(h_cas)
