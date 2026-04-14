@@ -504,7 +504,7 @@ end
 function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
     #BItermax=1;
     # relaxpermit= Glob["relaxpermit"]
-    iter=0;BIter=0;sol_time=0;res_time=0;Best_Iter=0;Best_sol_time=0;Best_res_time=0;LNSs=0;
+    iter=0;BIter=0;sol_time=0;res_time=0;Best_Iter=0;Best_sol_time=0;Best_res_time=0;LNSs=0;Best_Cas_MW=0; Best_Cas_MW_mean=0;
     #----------------------------Check initial operating point -------------------------------------------
     Ncost0,Vio_Sum_N0,Vio_general_N0,AVG_C_cost0,Vio_Sum_C0,OP_init0V,Vio_general_C0,min_infmax_C,casreps0,casreps_NLP=0,0,0,0,0,0,0,0,0,0
     # casreps0[8,1]
@@ -568,7 +568,7 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
     # sum(sum.([sum.(Vio_general_N[t,1]."percent") for t=1:nTP]))
     # Normal_infeasibility=0;
     # Contingency_infeasibility=0
-    OP_Valid=Dict{String, Any}();cost=0;OptGap=0;Maxvio_C=0;Maxvio_N=0;Vio_Sum_C=0;Vio_Sum_N=0
+    OP_Valid=Dict{String, Any}();cost=0;OptGap=0;Maxvio_C=0;Maxvio_N=0;Vio_Sum_C=0;Vio_Sum_N=0;Cas_MW_max=0;Cas_MW_mean=0;
     R_P=0;R_Q=0
     OP_init["TRB"][1]=maximum(sum(OP_init["PG"],dims=2))*0.0001
 
@@ -583,7 +583,7 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
     # Glob["Cascade_Opt"]=true
     Glob["Risk_cascade"]= false
     Cascade_Opt=Glob["Cascade_Opt"]
-    Cascade_Opt=false
+    # Cascade_Opt=false
     # Glob["I_relax"]=1.1
     Cascade_Rep=Make_cascade_Rep(casreps_NLP,OP_NLP,LNS_cas_NLP)
     Cascade_Rep=Add_Cascade_Rep!(casreps,LNS_cas,Glob,Cascade_Rep,Best_solution,mincost,minOptGap,iter,0,0,[[0 0] [0 0] [0 0] [0 0]])
@@ -829,6 +829,7 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
             #sum(Ncost)
             OptGap= 100*((sum(cost)-OP_NLP["obj"])/(OP_NLP["obj"]))
             Maxvio_C=maximum(Vio_Sum_C."Max");Maxvio_N=maximum(Vio_Sum_N."Max")
+            # Max_Cas_MW=
             OP["TR"]=model[:modTR]
             # OP["acc"]
             if Linearization_TYPE[Runcode[2]]=="SENS"
@@ -847,6 +848,10 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
 
             Cascade_Rep=Add_Cascade_Rep!(casreps2,LNS_cas,Glob,Cascade_Rep,OP_Valid,sum(cost),OptGap,iter,sol_time,res_time)
             display(Cascade_Rep)
+
+            Cas_MW_max= Cascade_Rep[end,"Worst_Cas_MW"]
+            Cas_MW_mean= Cascade_Rep[end,"Mean_Cas_MW"]
+
             # findmax(OP["V_c_Line"].-(Glob["SysData"]["Bus"]."V_max (pu)")')
             # OP["V_c_Line"][1,43,10]-(Glob["SysData"]["Bus"]."V_max (pu)")[43]
             # value.(model[:CV2magexporg][18,41,1])
@@ -909,25 +914,29 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
             Best_vio_general_N=Vio_general_N;Best_vio_sum_N=Vio_Sum_N
             Best_Iter=iter
             Best_sol_time=sol_time;Best_res_time=res_time
+            Best_Cas_MW= Cas_MW_max
+            Best_Cas_MW_mean= Cas_MW_mean
         end
         if (max(Maxvio_N,Maxvio_C)<1e-4 && Cascade_Rep[end,"CasNum"]==0) || ( !Cascade_Opt && max(min_infmax_N,min_infmax_C)<1e-4) 
             @info "Violations are removed"
             break
         end
     end
-    push!(Iter_Rep,repeat(["end"],size(Iter_Rep,2)))
-    push!(Cascade_Rep,repeat(["end"],size(Cascade_Rep,2)))
-    # Iter_Rep2=deepcopy(Iter_Rep)
-    # Iter_Rep[1:7,:]
-    if Cascade_Opt
-        ods_write(Glob["Path"]*"../Result/Iter_Report/CA_"*Problem_Type*string(Runcode),Dict(("General",1,1)=>Iter_Rep))
-        ods_write(Glob["Path"]*"../Result/Cascade_Report/CA_"*Problem_Type*string(Runcode)*"CR",Dict(("General",1,1)=>Cascade_Rep))
-    else
-        ods_write(Glob["Path"]*"../Result/Iter_Report/"*Problem_Type*string(Runcode),Dict(("General",1,1)=>Iter_Rep))
-        ods_write(Glob["Path"]*"../Result/Cascade_Report/"*Problem_Type*string(Runcode)*"CR",Dict(("General",1,1)=>Cascade_Rep))
+    if !monte_carlo
+        push!(Iter_Rep,repeat(["end"],size(Iter_Rep,2)))
+        push!(Cascade_Rep,repeat(["end"],size(Cascade_Rep,2)))
+        # Iter_Rep2=deepcopy(Iter_Rep)
+        # Iter_Rep[1:7,:]
+        if Cascade_Opt
+            ods_write(Glob["Path"]*"../Result/Iter_Report/CA_"*Problem_Type*string(Runcode),Dict(("General",1,1)=>Iter_Rep))
+            ods_write(Glob["Path"]*"../Result/Cascade_Report/CA_"*Problem_Type*string(Runcode)*"CR",Dict(("General",1,1)=>Cascade_Rep))
+        else
+            ods_write(Glob["Path"]*"../Result/Iter_Report/"*Problem_Type*string(Runcode),Dict(("General",1,1)=>Iter_Rep))
+            ods_write(Glob["Path"]*"../Result/Cascade_Report/"*Problem_Type*string(Runcode)*"CR",Dict(("General",1,1)=>Cascade_Rep))
+        end
+        # ods_write(Path*"../Result/Iter_Report/"*Problem_Type*string(Runcode),Dict(("General",1,1)=>Iter_Rep))
     end
-    # ods_write(Path*"../Result/Iter_Report/"*Problem_Type*string(Runcode),Dict(("General",1,1)=>Iter_Rep))
-    return mincost,Best_solution,Best_Iter,min_infmax_N,min_infmax_C,minOptGap,Best_vio_general_N,Best_vio_sum_N,Best_vio_general_C,Best_vio_sum_C,Best_sol_time,Best_res_time
+    return mincost,Best_solution,Best_Iter,min_infmax_N,min_infmax_C,minOptGap,Best_vio_general_N,Best_vio_sum_N,Best_vio_general_C,Best_vio_sum_C,Best_sol_time,Best_res_time,Best_Cas_MW, Best_Cas_MW_mean
 end
 
 function SLP_Report_Prepare(init_model,init_out)

@@ -4081,3 +4081,14 @@ function read_result(path,Problem_Type,annex="")
     end
     return datadict
 end
+
+function Make_Monte_Carlo_report()
+    Runcodes=[(3,3) (6,3) (4,3) (5,3)]
+    # [mincost,minOptGap,iter,restoration_time,min_infmax_N,min_infmax_C,Best_Cas_MW,Best_Cas_MW_mean]
+    Head=["Cost","OptGap","iter","Time","infmax_N","infmax_C","Cas_MW","Cas_MW_mean"]
+    MC_Results=Dict()
+    for RC in Runcodes
+        MC_Results[RC]=DataFrame(repeat([[]],length(Head)), Head)
+    end
+    return MC_Results
+end

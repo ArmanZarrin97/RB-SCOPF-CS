@@ -31,6 +31,7 @@ Problem_Type="SCOPF";Ptype_="DA";
 #---------------------Reading Input files
 Test_Sys="Nordic60/";nTL=1;TS=9; Report="feasiblity"# temporary values
 ERORR=Dict(); ERORR["DA"]=[0.00 0.00];ERORR["RT"]=[0.00 0.00];new_profile=[true true];printlevel=[1 0]; #[terminal print, ods print];
+monte_carlo=true
 
 Linearization_INIT=Dict(1=>"Flat",2=> "Exact", 3=> "DA5",4=> "DA10",5=> "DA20", 6=>"DA30" ) #
 Linearization_TYPE=Dict(1=>"Yang",2=> "SOCP", 3=> "SENS", 4=> "None", 5=> "Hybrid")
@@ -61,8 +62,11 @@ elseif Test_Sys=="Florin5/"
 end
 relaxpermit=true
 
-for _ in 1:50    
-    Glob=Set_global_parameters1(Test_Sys)
+MC_Results=Make_Monte_Carlo_report()
+for Miter in 1:50    
+
+    println("Miter: ",Miter)
+    global Glob=Set_global_parameters1(Test_Sys)
     #----------------------Set Initial values
 
     DA_out,DA_model,init_out,init_model=Initial_Set_points(Glob)
@@ -71,6 +75,9 @@ for _ in 1:50
     for Init in collect(values(Linearization_INIT))
         Init_OP[Init]=Initialize(Glob,Init,init_out,init_model,DA_out,DA_model)
     end
+
+    Init_OP_SC=Init_OP
+    SLP_Rep_SC=SLP_Rep
 
     # Init_OP_SC,SLP_Rep_SC=Init_OP,SLP_Rep
     # BSON.@save Glob["Path"]*"../Result/NL_Solution_SCOPF_t9.bson" Init_OP_SC SLP_Rep_SC
@@ -83,7 +90,8 @@ for _ in 1:50
     # BSON.@load Path*"../Result/NL_Solution_OPF.bson" Init_OP SLP_Rep
     # BSON.@load Glob["Path"]*"../Result/NL_Solution_SCOPF.bson" Init_OP_SC SLP_Rep_SC
     # BSON.@load Glob["Path"]*"../Result/NL_Solution_SCOPF.bson" Init_OP_SC SLP_Rep_SC
-    BSON.@load Glob["Path"]*"../Result/NL_Solution_SCOPF_t9.bson" Init_OP_SC SLP_Rep_SC
+
+    # BSON.@load Glob["Path"]*"../Result/NL_Solution_SCOPF_t9.bson" Init_OP_SC SLP_Rep_SC
 
     # BSON.@load Path*"../Result/NL_Solution.bson" Init_OP SLP_Rep
     # insertcols!(SLP_Rep, :Max_N_redis, :Max_N_redisQ => ["-"], after=true)
@@ -105,7 +113,7 @@ for _ in 1:50
 
     #9,12,14
     # for Runcode in [ (6,3) (3,3) (4,3) (5,3) ] # (4,3) (5,3) (2,1) (2,3) (1,1) (2,1) (3,1) (4,1) (5,1) (6,1) (7,1) $#(2,3) (3,3) (4,3) (1,1) (1,3) (5,1) (5,3) (2,1) (3,1) (4,1) (5,1)
-    for Runcode in [  (3,3) (6,3) (4,3) (5,3) (6,5) (5,5) (4,5) (3,5) (3,1) (4,1) (5,1) (6,1) ] # (4,3) (5,3) (2,1) (2,3) (1,1) (2,1) (3,1) (4,1) (5,1) (6,1) (7,1) $#(2,3) (3,3) (4,3) (1,1) (1,3) (5,1) (5,3) (2,1) (3,1) (4,1) (5,1)
+    for Runcode in [  (3,3) (6,3) (4,3) (5,3)]# (6,5) (5,5) (4,5) (3,5) (3,1) (4,1) (5,1) (6,1) ] # (4,3) (5,3) (2,1) (2,3) (1,1) (2,1) (3,1) (4,1) (5,1) (6,1) (7,1) $#(2,3) (3,3) (4,3) (1,1) (1,3) (5,1) (5,3) (2,1) (3,1) (4,1) (5,1)
     #(6,5) (5,5) (4,5) (3,5)
         Glob["Runcode"]=Runcode
         OP_init0=Init_OP_SC[Linearization_INIT[Glob["Runcode"][1]]]
@@ -126,9 +134,14 @@ for _ in 1:50
                 end
             end
         end
-        mincost,Best_solution,iter,min_infmax_N,min_infmax_C,minOptGap,Best_vio_general_N,Best_vio_sum_N,Best_vio_general_C,Best_vio_sum_C,sol_time,restoration_time= SLA_clean(Glob,OP_init0,OP_NLP;BItermax=7)
-        Max_N_redis,Max_C_redis,Max_N_redisQ,Max_C_redisQ=find_total_redispatch!(Glob, Best_solution,OP_init0)
+        mincost,Best_solution,iter,min_infmax_N,min_infmax_C,minOptGap,Best_vio_general_N,Best_vio_sum_N,Best_vio_general_C,Best_vio_sum_C,sol_time,restoration_time,Best_Cas_MW, Best_Cas_MW_mean= SLA_clean(Glob,OP_init0,OP_NLP;BItermax=7)
+        # Max_N_redis,Max_C_redis,Max_N_redisQ,Max_C_redisQ=find_total_redispatch!(Glob, Best_solution,OP_init0)
 
-        SLP_Rep_SC=Add_SLP_report!(SLP_Rep_SC,Runcode,Best_solution,mincost,minOptGap,min_infmax_N,min_infmax_C,Best_vio_general_N,Best_vio_general_C,iter,sol_time,restoration_time,Max_N_redis,Max_C_redis,Max_N_redisQ,Max_C_redisQ)
+        newrow=[mincost,minOptGap,iter,restoration_time,min_infmax_N,min_infmax_C,Best_Cas_MW,Best_Cas_MW_mean]
+        push!(MC_Results[Runcode], newrow)
+        # SLP_Rep_SC=Add_SLP_report!(SLP_Rep_SC,Runcode,Best_solution,mincost,minOptGap,min_infmax_N,min_infmax_C,Best_vio_general_N,Best_vio_general_C,iter,sol_time,restoration_time,Max_N_redis,Max_C_redis,Max_N_redisQ,Max_C_redisQ)
     end
 end
+
+BSON.@save Glob["Path"]*"../Result/NL_Solution_SCOPF_t9.bson" Init_OP_SC SLP_Rep_SC
+
