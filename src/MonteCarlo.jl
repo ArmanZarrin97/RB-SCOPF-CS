@@ -143,5 +143,5 @@ for Miter in 1:50
     end
 end
 
-BSON.@save Glob["Path"]*"../Result/NL_Solution_SCOPF_t9.bson" Init_OP_SC SLP_Rep_SC
+BSON.@save Glob["Path"]*"../Result/MC_Results.bson" MC_Results
 

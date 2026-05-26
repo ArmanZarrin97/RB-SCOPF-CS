@@ -29,7 +29,7 @@ include("Funcs/Cascading/Cascading_tool.jl")
 
 Problem_Type="SCOPF";Ptype_="DA";
 #---------------------Reading Input files
-Test_Sys="Nordic60/";nTL=1;TS=9; Report="feasiblity"# temporary values
+Test_Sys="Polish/";nTL=1;TS=1; Report="feasiblity"# temporary values
 ERORR=Dict(); ERORR["DA"]=[0.00 0.00];ERORR["RT"]=[0.00 0.00];new_profile=[true true];printlevel=[1 0]; #[terminal print, ods print];
 Glob=Set_global_parameters1(Test_Sys)
 
@@ -124,7 +124,7 @@ BSON.@load Glob["Path"]*"../Result/NL_Solution_SCOPF_t9.bson" Init_OP_SC SLP_Rep
 # if Problem_Type=="SCOPF"
 #     V_c_Line_1,θ_c_Line_1,PG_c_Line_1,QG_c_Line_1=sqrt.(value.(init_model[:e_c_Line].^2 +init_model[:f_c_Line].^2)),atan.(value.(<init_model[:f_c_Line]),value.(init_model[:e_c_Line])),value.(init_model[:PG_c_Line]),value.(init_model[:QG_c_Line])
 # end
-Runcode=(3,3)
+Runcode=(5,3)
 # @load "NL_Solution.jld2"
 
 # OP_NLP=Init_OP["Exact"]
@@ -135,7 +135,7 @@ OP_NLP=Init_OP_SC["Exact"]
 
 #9,12,14
 # for Runcode in [ (6,3) (3,3) (4,3) (5,3) ] # (4,3) (5,3) (2,1) (2,3) (1,1) (2,1) (3,1) (4,1) (5,1) (6,1) (7,1) $#(2,3) (3,3) (4,3) (1,1) (1,3) (5,1) (5,3) (2,1) (3,1) (4,1) (5,1)
-for Runcode in [  (3,3) (6,3) (4,3) (5,3) (6,5) (5,5) (4,5) (3,5) (3,1) (4,1) (5,1) (6,1) ] # (4,3) (5,3) (2,1) (2,3) (1,1) (2,1) (3,1) (4,1) (5,1) (6,1) (7,1) $#(2,3) (3,3) (4,3) (1,1) (1,3) (5,1) (5,3) (2,1) (3,1) (4,1) (5,1)
+for Runcode in [  (3,3) (6,3) (4,3) (5,3) ] # (4,3) (5,3) (2,1) (2,3) (1,1) (2,1) (3,1) (4,1) (5,1) (6,1) (7,1) $#(2,3) (3,3) (4,3) (1,1) (1,3) (5,1) (5,3) (2,1) (3,1) (4,1) (5,1)
 #(6,5) (5,5) (4,5) (3,5)
     Glob["Runcode"]=Runcode
     OP_init0=Init_OP_SC[Linearization_INIT[Glob["Runcode"][1]]]
