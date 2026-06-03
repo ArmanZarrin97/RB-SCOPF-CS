@@ -241,9 +241,9 @@ function Cascade_Sim(OP_NValid::Dict{String,Any}, Glob,cas_hist=[]) #Array{Union
     OP_Valid=pre_prepration!(Glob,OP_Valid,TSysData;nCon=nCon,nT=nT,C="ConL")
     h_cas=DataFrame(tup=cas_hist,Vio=zeros())
     Threads.@threads for t = 1:nT
-        println("time step $t :")
+        # println("time step $t :")
         for i = 1:nCon
-            print(i)
+            # print(i)
             ASysData= Prepare_Dataset(Glob, OP_Valid, TSysData, t; i=i, C="CASCADE", I_relax=I_relax)
             #power injections before PF:
             # p_inj00 = zeros(size(ASysData["Bus"], 1))

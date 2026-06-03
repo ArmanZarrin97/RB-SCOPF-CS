@@ -3281,7 +3281,7 @@ function keep_K_percent_new_4D_row_V2!(B::BitArray{4}, S::AbstractArray{T,4}, pe
 end
 
 function findTR_Q_coupled2(nTP, V_0,Vmax_VP,Vmin_VP,VmaxIndex_P,VminIndex_P,Vmaxlimit0,Vminlimit0,S_VQ,QBound,raw,cl;Improve_Rate=5)
-    
+
     z0=sum((V_0-Vmaxlimit0).>=0)+sum(Vminlimit0-V_0.>=0)
     zmax=round(size(Vmaxlimit0)[1]*size(Vmaxlimit0)[2]*size(Vmaxlimit0)[3]*Q_con_percent)+1
     TR=0;TR_max=0.5;TR_min=0.00
@@ -3460,8 +3460,8 @@ function findTR_Q_coupled2(nTP, V_0,Vmax_VP,Vmin_VP,VmaxIndex_P,VminIndex_P,Vmax
         #     best_acc=acc
         #     TR_best=TR
         # end
-        if z_acc_P>=worst_vio  || ((y_acc_P<=max(0.001,maximum(Vmax_VP),maximum(-Vmin_VP))-0.001) && max(0,z_acc_Q)>=y_acc_Q && (max(0,z_acc_P)>=y_acc_P) || z_acc_Q>=0) #|| (y_acc_P<= max(0.1,maximum(Vmax_VP),maximum(-Vmin_VP))-0.1))) #|| z_acc_Q >= worst_vio #|| max(z_acc_P,z_acc_Q)>= max(0.05,y_acc_Q)
-        # if z_acc_P>=worst_vio  || ((y_acc_P<=max(0.001,maximum(Vmax_VP),maximum(-Vmin_VP))-0.001) && max(0,z_acc_Q)>=y_acc_Q && (max(0,z_acc_P)>=y_acc_P )) #|| z_acc_Q >= worst_vio #|| max(z_acc_P,z_acc_Q)>= max(0.05,y_acc_Q)
+        if z_acc_P>=worst_vio  || ((y_acc_P<=max(0.001,maximum(Vmax_VP),maximum(-Vmin_VP))-0.001) && max(0,z_acc_Q)>=y_acc_Q && (max(0,z_acc_P)>=y_acc_P) || z_acc_Q>=worst_vio) #|| (y_acc_P<= max(0.1,maximum(Vmax_VP),maximum(-Vmin_VP))-0.1))) #|| z_acc_Q >= worst_vio #|| max(z_acc_P,z_acc_Q)>= max(0.05,y_acc_Q)
+        # if z_acc_P>=worst_vio  || ((y_acc_P<=max(0.001,maximum(Vmax_VP),maximum(-Vmin_VP))-0.001) && max(0,z_acc_Q)>=y_acc_Q && (max(0,z_acc_P)>=y_acc_P )) #|| z_acc_Q >= 0 #|| max(z_acc_P,z_acc_Q)>= max(0.05,y_acc_Q)
 
             TR_max = TR  # Reduce TR
             if TR_max<TR_best
@@ -3734,8 +3734,9 @@ function get_cascade_stage1(cascade_info)
 end
 
 # cascade_info=model[:CascadeInfo]
-function get_cascade_stage1_new(cascade_info)
-    fstage=findall(x-> x[3]==1,cascade_info["tcs_Cascade"][:,])
+# Dictopt=Dict(zip(optstage[1],optstage[2]))
+function get_cascade_stage1_new(cascade_info,Dictopt)
+    fstage=findall(x-> x[3]==1 && Dictopt[(x[1], x[2])]==1,cascade_info["tcs_Cascade"][:,])
     # cascade_info["tcs_Cascade"][fstage,1]
     # i,j=last(enumerate(cascade_info["tcs_Cascade"][fstage,1]))
     cashist=[(j[1], cascade_info["line_Cascade"][fstage,1][i], j[2]) for (i, j) in enumerate(cascade_info["tcs_Cascade"][fstage,1])]
@@ -4091,4 +4092,877 @@ function Make_Monte_Carlo_report()
         MC_Results[RC]=DataFrame(repeat([[]],length(Head)), Head)
     end
     return MC_Results
+end
+
+using Printf
+function make_cascade_stopping_stage_plot2(Glob, casreps,iter, model=nothing)
+
+    nCon = size(Glob["SysData"]["ConL"], 1)
+    nTP  = Glob["nTL"]
+
+    if model === nothing
+        # --- Simulation ---
+        tc_stop   = findall(x -> size(x, 1) > 1, casreps)
+        tc_stopat = getfield.(tc_stop, :I)
+        stopat    = map(x -> x[end, 1], casreps[tc_stop])
+        LNS_stop  = [casreps[CartesianIndex(tc_stopat[x])][stopat[x]+1, "LNS_T"]
+                     for x in 1:length(stopat)]
+        labels_map = Dict(tc_stopat[x] => stopat[x]   for x in 1:length(stopat))
+        title      = "Simulation — Total Load Shed per (Time, Contingency),  iter=$(iter)"
+
+    else
+        # --- Optimization ---
+        bin_cas  = model[:bin_Cas]
+        indices  = getfield.(getfield.(keys(bin_cas), :I), 1)
+        tc_all   = Set(map(((t, c, _),) -> (t, c), indices))
+        vals     = value.(bin_cas).data
+        stages   = findall(x -> x == 1, vals)
+        @assert length(tc_all) == length(stages)
+        stopat    = getfield.(indices[stages], 3).-1
+        tc_stopat = map(((t, c, _),) -> (t, c), indices[stages])
+        LNS_stop  = [casreps[CartesianIndex(tc_stopat[x])][stopat[x]+1, "LNS_T"]
+                     for x in 1:length(stages)]
+        labels_map = Dict(tc_stopat[x] => stopat[x]   for x in 1:length(stages))
+        title      = "Optimization — Load Shed at Stopping Stage,  iter=$(iter)"
+    end
+
+    # --- Build matrices ---
+    loadshed_map = Dict(tc_stopat[x] => LNS_stop[x] for x in 1:length(stopat))
+
+    LS = [get(loadshed_map, (t, c), casreps[t, c][end, "LNS_T"]) for c in 1:nCon, t in 1:nTP]
+    LB = [get(labels_map,   (t, c), 0)                           for c in 1:nCon, t in 1:nTP]
+
+   # NC only when no load shed AND no cascade
+    LS_plot = Float64.(LS)
+    LS_plot[LS .== 0.0 .&& LB .== 0] .= NaN
+
+    ls_max = sum(Glob["SysData"]["Load"][!, "Pd (pu)"]; init=0)
+
+    fig = Figure(size = (900, 450), fontsize = 13)
+
+    ax = Axis(fig[1, 1];
+        title              = title,
+        xlabel             = "Time Period",
+        ylabel             = "Contingency",
+        xticks             = (1:nTP,  string.(1:nTP)),
+        yticks             = (1:nCon, string.(1:nCon)),
+        xticklabelrotation = π/4
+    )
+
+    hm = CairoMakie.heatmap!(ax, 1:nTP, 1:nCon, LS_plot';
+        colormap   = cgrad([:mistyrose, :red, :darkred]),   # light red → dark red
+        colorrange = (0, ls_max),
+        nan_color  = :lightgrey                             # true NC only
+    )
+
+    for t in 1:nTP, c in 1:nCon
+        ls  = LS[c, t]
+        lbl = LB[c, t]
+        no_event  = ls == 0.0 && lbl == 0
+        fontcolor = ls >= 0.6 * ls_max ? :white : :black   # no darkgrey needed anymore
+
+        if no_event
+            text!(ax, t, c;
+                text  = "NC", align = (:center, :center), fontsize = 10, color = :grey)
+        elseif lbl == 0
+            # Load shed but no cascade — two lines
+            text!(ax, t, c + 0.15;
+                text = @sprintf("%.2f", ls), align = (:center, :center), fontsize = 9, color = fontcolor)
+            text!(ax, t, c - 0.15;
+                text = "MW",                 align = (:center, :center), fontsize = 9, color = fontcolor)
+        else
+            # Load shed + cascade — three lines
+            text!(ax, t, c + 0.28;
+                text = @sprintf("%.2f", ls), align = (:center, :center), fontsize = 9, color = fontcolor)
+            text!(ax, t, c;
+                text = "MW",                 align = (:center, :center), fontsize = 9, color = fontcolor)
+            text!(ax, t, c - 0.28;
+                text = "s: $(lbl)",          align = (:center, :center), fontsize = 9, color = fontcolor)
+        end
+    end
+
+    Colorbar(fig[1, 2], hm;
+        label    = "Load Shed (MW)",
+        ticks    = LinearTicks(5),
+        flipaxis = true
+    )
+
+    Legend(fig[2, 1:2],
+        [PolyElement(color = :lightgrey)],
+        ["NC — no cascade and no load shed"],
+        orientation = :horizontal,
+        tellwidth   = false
+    )
+
+    return fig
+end
+
+function make_cascade_stopping_stage_plot3(Glob, casreps, iter, model=nothing; reprow=nothing)
+
+    nCon = size(Glob["SysData"]["ConL"], 1)
+    nTP  = Glob["nTL"]
+
+    if model === nothing
+        # --- Simulation ---
+        tc_stop   = findall(x -> size(x, 1) > 1, casreps)
+        tc_stopat = getfield.(tc_stop, :I)
+        stopat    = map(x -> x[end, 1], casreps[tc_stop])
+        LNS_stop  = [casreps[CartesianIndex(tc_stopat[x])][stopat[x]+1, "LNS_T"]
+                     for x in 1:length(stopat)]
+        labels_map = Dict(tc_stopat[x] => stopat[x]  for x in 1:length(stopat))
+        title      = "Simulation — Total Load Shed per (Time, Contingency),  iter=$(iter)"
+
+    else
+        # --- Optimization ---
+        bin_cas  = model[:bin_Cas]
+        indices  = getfield.(getfield.(keys(bin_cas), :I), 1)
+        tc_all   = Set(map(((t, c, _),) -> (t, c), indices))
+        vals     = value.(bin_cas).data
+        stages   = findall(x -> x == 1, vals)
+        @assert length(tc_all) == length(stages)
+        stopat    = getfield.(indices[stages], 3) .- 1
+        tc_stopat = map(((t, c, _),) -> (t, c), indices[stages])
+        LNS_stop  = [casreps[CartesianIndex(tc_stopat[x])][stopat[x]+1, "LNS_T"]
+                     for x in 1:length(stages)]
+        labels_map = Dict(tc_stopat[x] => stopat[x]  for x in 1:length(stages))
+        title      = "Optimization — Load Shed at Stopping Stage,  iter=$(iter)"
+    end
+
+    # --- Build matrices ---
+    loadshed_map = Dict(tc_stopat[x] => LNS_stop[x] for x in 1:length(stopat))
+
+    LS = [get(loadshed_map, (t, c), casreps[t, c][end, "LNS_T"]) for c in 1:nCon, t in 1:nTP]
+    LB = [get(labels_map,   (t, c), 0)                           for c in 1:nCon, t in 1:nTP]
+
+    LS_plot = Float64.(LS)
+    LS_plot[LS .== 0.0 .&& LB .== 0] .= NaN
+
+    ls_max = sum(Glob["SysData"]["Load"][!, "Pd (pu)"]; init=0)
+
+    # --- Figure ---
+    fig = Figure(size = (900, 480), fontsize = 13) #reprow === nothing ? 480 : 640
+
+    ax = Axis(fig[1, 1];
+        title              = title,
+        xlabel             = "Time Period",
+        ylabel             = "Contingency",
+        xticks             = (1:nTP,  string.(1:nTP)),
+        yticks             = (1:nCon, string.(1:nCon)),
+        xticklabelrotation = π/4
+    )
+
+    hm = CairoMakie.heatmap!(ax, 1:nTP, 1:nCon, LS_plot';
+        colormap   = cgrad([:mistyrose, :red, :darkred]),
+        colorrange = (0, ls_max),
+        nan_color  = :lightgrey
+    )
+
+    for t in 1:nTP, c in 1:nCon
+        ls        = LS[c, t]
+        lbl       = LB[c, t]
+        no_event  = ls == 0.0 && lbl == 0
+        fontcolor = ls >= 0.6 * ls_max ? :white : :black
+
+        if no_event
+            text!(ax, t, c;
+                text  = "NC", align = (:center, :center), fontsize = 10, color = :grey)
+        elseif lbl == 0
+            # Load shed but no cascade — two lines
+            text!(ax, t, c + 0.15;
+                text = @sprintf("%.2f", ls), align = (:center, :center), fontsize = 9, color = fontcolor)
+            text!(ax, t, c - 0.15;
+                text = "MW",                 align = (:center, :center), fontsize = 9, color = fontcolor)
+        else
+            # Load shed + cascade — three lines
+            text!(ax, t, c + 0.28;
+                text = @sprintf("%.2f", ls), align = (:center, :center), fontsize = 9, color = fontcolor)
+            text!(ax, t, c;
+                text = "MW",                 align = (:center, :center), fontsize = 9, color = fontcolor)
+            text!(ax, t, c - 0.28;
+                text = "s: $(lbl)",          align = (:center, :center), fontsize = 9, color = fontcolor)
+        end
+    end
+
+    Colorbar(fig[1, 2], hm;
+        label    = "Load Shed (MW)",
+        ticks    = LinearTicks(5),
+        flipaxis = true
+    )
+
+        # --- Bottom row: table (left) + legend (right) ---
+    bottom = GridLayout(fig[2, 1:2])
+
+    # ── Table (left) ──────────────────────────────────────────
+    if reprow !== nothing
+        ax_t = Axis(bottom[1, 1])
+        hidedecorations!(ax_t)
+        hidespines!(ax_t)
+
+        # Grid definition
+        # rows:    0 = pre/post header, 1 = col headers, 2 = Voltage, 3 = Line Flow
+        # cols:    0 = row label, 1-3 = pre (Max/Mean/N), 4-6 = post (Max/Mean/N)
+        ncols  = 7
+        nrows  = 4
+        cw     = [0.07, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04]   # column widths
+        rh     = [0.10, 0.10, 0.10, 0.10]                      # row heights
+        CairoMakie.xlims!(ax_t, 0, sum(cw))
+        CairoMakie.ylims!(ax_t, 0, sum(rh))
+
+        # Precompute left edge of each column and bottom edge of each row
+        cx = cumsum([0; cw])   # length ncols+1
+        ry = cumsum([0; rh])   # length nrows+1  (row 0 at bottom)
+        # Flip y so row 0 is at top
+        flip(y) = sum(rh) - y
+
+        cell_center_x(col) = (cx[col+1] + cx[col+2]) / 2         # 0-indexed col
+        cell_center_y(row) = flip((ry[row+1] + ry[row+2]) / 2)   # 0-indexed row
+
+        # Draw cell backgrounds
+        header_cols = [(:steelblue, 0.15), (:darkorange, 0.15)]
+        for (span, clr) in [((0, 1:3), header_cols[1]), ((0, 4:6), header_cols[2])]
+            row, cols = span
+            x0 = cx[first(cols)+1]
+            x1 = cx[last(cols)+2]
+            y0 = flip(ry[row+2])
+            y1 = flip(ry[row+1])
+            poly!(ax_t, Point2f[(x0,y0),(x1,y0),(x1,y1),(x0,y1)];
+                color = clr, strokecolor = :lightgrey, strokewidth = 0.5)
+        end
+        # for (r, clr) in [(2, (:black,0.04)), (3, (:black,0.0))]
+        #     x0, x1 = cx[1], cx[end]
+        #     y0 = flip(ry[r+2])
+        #     y1 = flip(ry[r+1])
+        #     poly!(ax_t, Point2f[(x0,y0),(x1,y0),(x1,y1),(x0,y1)];
+        #         color = clr, strokecolor = :lightgrey, strokewidth = 0.5)
+        # end
+
+        # Grid lines
+        for (i,x) in enumerate(cx)
+            if i>1
+                lines!(ax_t, [x, x], [0, sum(rh)-rh[end]]; color = :lightgrey, linewidth = 0.6)
+            end
+        end
+        # for (y,i) in enumerate(ry)
+        #     if i>1
+        #         lines!(ax_t, [0, sum(cw)], [flip(y), flip(y)]; color = :lightgrey, linewidth = 0.6)
+        #     end
+        # end
+        # Bolder separator between pre and post
+        lines!(ax_t, [cx[5], cx[5]], [0, sum(rh)]; color = :grey, linewidth = 1.2)
+
+        # Row 0: Pre / Post headers
+        text!(ax_t, (cx[2]+cx[5])/2, cell_center_y(0);
+            text="Pre-Contingency",  align=(:center,:center), fontsize=8, color=:steelblue,  font=:bold)
+        text!(ax_t, (cx[5]+cx[8])/2, cell_center_y(0);
+            text="Post-Contingency", align=(:center,:center), fontsize=8, color=:darkorange, font=:bold)
+
+        # Row 1: column headers
+        for (col, lbl) in enumerate(["", "Max", "Mean", "N", "Max", "Mean", "N"])
+            text!(ax_t, cell_center_x(col-1), cell_center_y(1);
+                text=lbl, align=(:center,:center), fontsize=8, color=:black, font=:bold)
+        end
+
+        # Rows 2-3: data
+        foreach(col -> reprow[col] isa AbstractFloat && isnan(reprow[col]) && (reprow[col] = 0.0), names(reprow))
+         XX = (
+            voltage  = (pre  = (max=max(reprow."Vmin_Abs", reprow."Vmax_Abs"), mean= (reprow."Vmin_N_M" * reprow."Vmin_N_N" + reprow."Vmax_N_M" * reprow."Vmax_N_N")/(reprow."Vmin_N_N" + reprow."Vmax_N_N"), n= sum(reprow."Vmin_N_N" + reprow."Vmax_N_N")),
+                        post = (max=max(reprow."Vmin_C_Abs", reprow."Vmax_C_Abs"), mean= (reprow."Vmin_C_M" * reprow."Vmin_C_N" + reprow."Vmax_C_M" * reprow."Vmax_C_N")/(reprow."Vmin_C_N" + reprow."Vmax_C_N"), n= sum(reprow."Vmin_C_N" + reprow."Vmax_C_N"))),
+            lineflow = (pre  = (max=reprow."Smax_N", mean= reprow."Smax_N_M", n= reprow."Smax_N_N"),
+                        post = (max=reprow."Smax_C", mean= reprow."Smax_C_M", n= reprow."Smax_C_N"))
+        )
+        table_rows = [
+            ("Voltage (p.u)",   [XX.voltage.pre.max,  XX.voltage.pre.mean,  XX.voltage.pre.n,
+                           XX.voltage.post.max, XX.voltage.post.mean, XX.voltage.post.n]),
+            ("Line Flow (p.u)", [XX.lineflow.pre.max, XX.lineflow.pre.mean, XX.lineflow.pre.n,
+                           XX.lineflow.post.max,XX.lineflow.post.mean,XX.lineflow.post.n]),
+        ]
+
+        for (r, (label, vals)) in enumerate(table_rows)
+            row = r + 1   # table row index (0-based)
+            # Row label
+            text!(ax_t, cx[2] - 0.01, cell_center_y(row);
+                text=label, align=(:right,:center), fontsize=9, color=:black, font=:bold)
+            # Values
+            for (col, val) in enumerate(vals)
+                # fontcolor = :grey
+                text!(ax_t, cell_center_x(col), cell_center_y(row);
+                    text     = val isa Int ? string(val) : @sprintf("%.3f", val),
+                    align    = (:center, :center),
+                    fontsize = 9)
+                    # color    = fontcolor)
+            end
+        end
+
+        colsize!(bottom, 1, Relative(0.45))
+    end
+    rowsize!(fig.layout, 2, 50)
+
+    # ── Legend (right) ────────────────────────────────────────
+    Legend(bottom[1, reprow === nothing ? (1:2) : 2],
+        [PolyElement(color = :lightgrey)],
+        ["NC — no cascade and no load shed"],
+        orientation  = :vertical,
+        tellwidth    = false,
+        tellheight   = false,
+        valign       = :center,
+        halign       = :right
+    )
+
+    rowgap!(fig.layout, 1, 6)
+    # fig
+    return fig
+end
+
+function make_cascade_stopping_stage_plot3(Glob, casreps, iter, model=nothing; reprow=nothing)
+
+    nCon = size(Glob["SysData"]["ConL"], 1)
+    nTP  = Glob["nTL"]
+
+    if model === nothing
+        # --- Simulation ---
+        tc_stop   = findall(x -> size(x, 1) > 1, casreps)
+        tc_stopat = getfield.(tc_stop, :I)
+        stopat    = map(x -> x[end, 1], casreps[tc_stop])
+        LNS_stop  = [casreps[CartesianIndex(tc_stopat[x])][stopat[x]+1, "LNS_T"]
+                     for x in 1:length(stopat)]
+        labels_map = Dict(tc_stopat[x] => stopat[x]  for x in 1:length(stopat))
+        title      = "Simulation — Total Load Shed per (Time, Contingency),  iter=$(iter)"
+
+    else
+        # --- Optimization ---
+        bin_cas  = model[:bin_Cas]
+        indices  = getfield.(getfield.(keys(bin_cas), :I), 1)
+        tc_all   = Set(map(((t, c, _),) -> (t, c), indices))
+        vals     = value.(bin_cas).data
+        stages   = findall(x -> x == 1, vals)
+        @assert length(tc_all) == length(stages)
+        stopat    = getfield.(indices[stages], 3) .- 1
+        tc_stopat = map(((t, c, _),) -> (t, c), indices[stages])
+        LNS_stop  = [casreps[CartesianIndex(tc_stopat[x])][stopat[x]+1, "LNS_T"]
+                     for x in 1:length(stages)]
+        labels_map = Dict(tc_stopat[x] => stopat[x]  for x in 1:length(stages))
+        title      = "Optimization — Load Shed at Stopping Stage,  iter=$(iter)"
+    end
+
+    # --- Build matrices ---
+    loadshed_map = Dict(tc_stopat[x] => LNS_stop[x] for x in 1:length(stopat))
+
+    LS = [get(loadshed_map, (t, c), casreps[t, c][end, "LNS_T"]) for c in 1:nCon, t in 1:nTP]
+    LB = [get(labels_map,   (t, c), 0)                           for c in 1:nCon, t in 1:nTP]
+
+    LS_plot = Float64.(LS)
+    LS_plot[LS .== 0.0 .&& LB .== 0] .= NaN
+
+    ls_max = sum(Glob["SysData"]["Load"][!, "Pd (pu)"]; init=0)
+
+    # --- Figure ---
+    fig = Figure(size = (900, 360), fontsize = 13) #reprow === nothing ? 480 : 640
+
+    ax = Axis(fig[1, 1];
+        title              = title,
+        xlabel             = "Time Period",
+        ylabel             = "Contingency",
+        xticks             = (1:nTP,  string.(1:nTP)),
+        yticks             = (1:nCon, string.(1:nCon)),
+        xticklabelrotation = π/4
+    )
+
+    hm = CairoMakie.heatmap!(ax, 1:nTP, 1:nCon, LS_plot';
+        colormap   = cgrad([:mistyrose, :red, :darkred]),
+        colorrange = (0, ls_max),
+        nan_color  = :lightgrey
+    )
+
+    for t in 1:nTP, c in 1:nCon
+        ls        = LS[c, t]
+        lbl       = LB[c, t]
+        no_event  = ls == 0.0 && lbl == 0
+        fontcolor = ls >= 0.6 * ls_max ? :white : :black
+
+        if no_event
+            text!(ax, t, c;
+                text  = "NC", align = (:center, :center), fontsize = 10, color = :grey)
+        elseif lbl == 0
+            # Load shed but no cascade — two lines
+            text!(ax, t, c + 0.14;
+                text = @sprintf("%.2f", ls), align = (:center, :center), fontsize = 9, color = fontcolor)
+            text!(ax, t, c;
+                text = "MW",                 align = (:center, :center), fontsize = 9, color = fontcolor)
+        else
+            # Load shed + cascade — three lines
+            text!(ax, t, c + 0.20;
+                text = @sprintf("%.2f", ls), align = (:center, :center), fontsize = 9, color = fontcolor)
+            text!(ax, t, c;
+                text = "MW",                 align = (:center, :center), fontsize = 9, color = fontcolor)
+            text!(ax, t, c - 0.28;
+                text = "s: $(lbl)",          align = (:center, :center), fontsize = 9, color = fontcolor)
+        end
+    end
+
+    Colorbar(fig[1, 2], hm;
+        label    = "Load Shed (MW)",
+        ticks    = LinearTicks(5),
+        flipaxis = true
+    )
+
+        # --- Bottom row: table (left) + legend (right) ---
+    bottom = GridLayout(fig[2, 1:2])
+
+    # ── Table (left) ──────────────────────────────────────────
+    if reprow !== nothing
+        ax_t = Axis(bottom[1, 1])
+        hidedecorations!(ax_t)
+        hidespines!(ax_t)
+
+        # Grid definition
+        # rows:    0 = pre/post header, 1 = col headers, 2 = Voltage, 3 = Line Flow
+        # cols:    0 = row label, 1-3 = pre (Max/Mean/N), 4-6 = post (Max/Mean/N)
+        ncols  = 7
+        nrows  = 4
+        cw     = [0.07, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04]   # column widths
+        rh     = [0.10, 0.10, 0.10, 0.10]                      # row heights
+        CairoMakie.xlims!(ax_t, 0, sum(cw))
+        CairoMakie.ylims!(ax_t, 0, sum(rh))
+
+        # Precompute left edge of each column and bottom edge of each row
+        cx = cumsum([0; cw])   # length ncols+1
+        ry = cumsum([0; rh])   # length nrows+1  (row 0 at bottom)
+        # Flip y so row 0 is at top
+        flip(y) = sum(rh) - y
+
+        cell_center_x(col) = (cx[col+1] + cx[col+2]) / 2         # 0-indexed col
+        cell_center_y(row) = flip((ry[row+1] + ry[row+2]) / 2)   # 0-indexed row
+
+        # Draw cell backgrounds
+        header_cols = [(:steelblue, 0.15), (:darkorange, 0.15)]
+        for (span, clr) in [((0, 1:3), header_cols[1]), ((0, 4:6), header_cols[2])]
+            row, cols = span
+            x0 = cx[first(cols)+1]
+            x1 = cx[last(cols)+2]
+            y0 = flip(ry[row+2])
+            y1 = flip(ry[row+1])
+            poly!(ax_t, Point2f[(x0,y0),(x1,y0),(x1,y1),(x0,y1)];
+                color = clr, strokecolor = :lightgrey, strokewidth = 0.5)
+        end
+        # for (r, clr) in [(2, (:black,0.04)), (3, (:black,0.0))]
+        #     x0, x1 = cx[1], cx[end]
+        #     y0 = flip(ry[r+2])
+        #     y1 = flip(ry[r+1])
+        #     poly!(ax_t, Point2f[(x0,y0),(x1,y0),(x1,y1),(x0,y1)];
+        #         color = clr, strokecolor = :lightgrey, strokewidth = 0.5)
+        # end
+
+        # Grid lines
+        for (i,x) in enumerate(cx)
+            if i>1
+                lines!(ax_t, [x, x], [0, sum(rh)-rh[end]]; color = :lightgrey, linewidth = 0.6)
+            end
+        end
+        # for (y,i) in enumerate(ry)
+        #     if i>1
+        #         lines!(ax_t, [0, sum(cw)], [flip(y), flip(y)]; color = :lightgrey, linewidth = 0.6)
+        #     end
+        # end
+        # Bolder separator between pre and post
+        lines!(ax_t, [cx[5], cx[5]], [0, sum(rh)]; color = :grey, linewidth = 1.2)
+
+        # Row 0: Pre / Post headers
+        text!(ax_t, (cx[2]+cx[5])/2, cell_center_y(0);
+            text="Pre-Contingency",  align=(:center,:center), fontsize=8, color=:steelblue,  font=:bold)
+        text!(ax_t, (cx[5]+cx[8])/2, cell_center_y(0);
+            text="Post-Contingency", align=(:center,:center), fontsize=8, color=:darkorange, font=:bold)
+
+        # Row 1: column headers
+        for (col, lbl) in enumerate(["", "Max", "Mean", "N", "Max", "Mean", "N"])
+            text!(ax_t, cell_center_x(col-1), cell_center_y(1);
+                text=lbl, align=(:center,:center), fontsize=8, color=:black, font=:bold)
+        end
+
+        # Rows 2-3: data
+        foreach(col -> reprow[col] isa AbstractFloat && isnan(reprow[col]) && (reprow[col] = 0.0), names(reprow))
+         XX = (
+            voltage  = (pre  = (max=max(reprow."Vmin_Abs", reprow."Vmax_Abs"), mean= (reprow."Vmin_N_M" * reprow."Vmin_N_N" + reprow."Vmax_N_M" * reprow."Vmax_N_N")/(reprow."Vmin_N_N" + reprow."Vmax_N_N"), n= sum(reprow."Vmin_N_N" + reprow."Vmax_N_N")),
+                        post = (max=max(reprow."Vmin_C_Abs", reprow."Vmax_C_Abs"), mean= (reprow."Vmin_C_M" * reprow."Vmin_C_N" + reprow."Vmax_C_M" * reprow."Vmax_C_N")/(reprow."Vmin_C_N" + reprow."Vmax_C_N"), n= sum(reprow."Vmin_C_N" + reprow."Vmax_C_N"))),
+            lineflow = (pre  = (max=reprow."Smax_N", mean= reprow."Smax_N_M", n= reprow."Smax_N_N"),
+                        post = (max=reprow."Smax_C", mean= reprow."Smax_C_M", n= reprow."Smax_C_N"))
+        )
+        table_rows = [
+            ("Voltage (p.u)",   [XX.voltage.pre.max,  XX.voltage.pre.mean,  XX.voltage.pre.n,
+                           XX.voltage.post.max, XX.voltage.post.mean, XX.voltage.post.n]),
+            ("Line Flow (p.u)", [XX.lineflow.pre.max, XX.lineflow.pre.mean, XX.lineflow.pre.n,
+                           XX.lineflow.post.max,XX.lineflow.post.mean,XX.lineflow.post.n]),
+        ]
+
+        round(Int,table_rows[1][2][3])
+        for (r, (label, vals)) in enumerate(table_rows)
+            row = r + 1   # table row index (0-based)
+            # Row label
+            text!(ax_t, cx[2] - 0.01, cell_center_y(row);
+                text=label, align=(:right,:center), fontsize=9, color=:black, font=:bold)
+            # Values
+            for (col, val) in enumerate(vals)
+                # text= col in [3,6] ? string(round(Int, val)) : @sprintf("%.3f", val)
+                # fontcolor = :grey
+                text!(ax_t, cell_center_x(col), cell_center_y(row);
+                    text     = col in [3,6] ? string(round(Int, val)) : @sprintf("%.3f", val),
+                    align    = (:center, :center),
+                    fontsize = 9)
+                    # color    = fontcolor)
+            end
+        end
+
+        colsize!(bottom, 1, Relative(0.45))
+    end
+    rowsize!(fig.layout, 2, 50)
+
+    # ── Legend (right) ────────────────────────────────────────
+    Legend(bottom[1, reprow === nothing ? (1:2) : 2],
+        [PolyElement(color = :lightgrey)],
+        ["NC — no cascade and no load shed"],
+        orientation  = :vertical,
+        tellwidth    = false,
+        tellheight   = false,
+        valign       = :center,
+        halign       = :right
+    )
+
+    rowgap!(fig.layout, 1, 6)
+    # fig
+    return fig
+end
+
+function make_cascade_stopping_stage_plot4(Glob, casreps, iter, model=nothing; reprow=nothing, optstage=nothing,cas_hist=nothing)
+
+    nCon = size(Glob["SysData"]["ConL"], 1)
+    nTP  = Glob["nTL"]
+
+    # --- Adaptive sizing ---
+    cell_w    = min(2000,2000/nTP)                              # pixels per time period
+    cell_h    = min(cell_w,600/nCon)                             # pixels per contingency
+    fig_w     = min(2200, nTP  * cell_w + 200)  # +200 for colorbar + margins
+    fig_h     = min(750, nCon * cell_h + 150)  # +150 for title + bottom row
+    fig_h_tot = fig_h + (reprow === nothing ? 60 : 80)
+
+    # Font and offset scale with cell size
+    cell_size   = min(cell_w, cell_h)
+    fsize_cell  = clamp(round(Int, cell_size / 9),  18, 28)   # annotation font
+    fsize_ax    = clamp(round(Int, cell_size / 8),  18, 28)   # axis font
+    font_table = fsize_ax
+    off3        = clamp(cell_h / 220, 0.15, 0.32)            # 3-line vertical offset
+    off2        = clamp(cell_h / 300, 0.10, 0.20)            # 2-line vertical offset
+    # line_h = fsize_cell * (nCon / (fig_h - 150))   # axis units per line of text
+    linespace = 0.2*1.1
+    # padding = cell_h / fsize_cell
+
+    if isnothing(model)
+        # --- Simulation ---
+        tc_stop   = findall(x -> size(x, 1) > 1, casreps)
+        tc_stopat = getfield.(tc_stop, :I)
+        stopat    = map(x -> x[end, 1], casreps[tc_stop])
+        # casv=0
+        # casvtc=0
+        # for d in tc_stop
+        #     stagevio=maximum.(casreps[d]."VM",init=-10)
+        #     casvio=minimum(filter(x-> x>=0,stagevio))
+        #     if casvio>casv
+        #         casv=casvio
+        #         casvtc=d
+        #     end
+        # end
+        LNS_stop  = [casreps[CartesianIndex(tc_stopat[x])][stopat[x]+1, "LNS_T"]
+                     for x in 1:length(stopat)]
+        labels_map = Dict(tc_stopat[x] => stopat[x]  for x in 1:length(stopat))
+        title      = "Simulation — Total Load Shed per (Time, Contingency),  iter=$(iter)"
+
+        #elseif bin_Cas exist in model
+    elseif haskey(model, :bin_Cas)
+        # --- Optimization ---
+        bin_cas  = model[:bin_Cas]
+        indices  = getfield.(getfield.(keys(bin_cas), :I), 1)
+        # tc_all   = Set(map(((t, c, _),) -> (t, c), indices))
+        vals     = value.(bin_cas).data
+        stages   = findall(x -> x == 1, vals)
+        # @assert length(tc_all) == length(stages)
+        stopat    = getfield.(indices[stages], 3) .- 1
+        tc_stopat = map(((t, c, _),) -> (t, c), indices[stages])
+        optstage= (tc_stopat,stopat.+1)
+        LNS_stop  = [casreps[CartesianIndex(tc_stopat[x])][stopat[x]+1, "LNS_T"]
+                     for x in 1:length(stages)]
+        labels_map = Dict(tc_stopat[x] => stopat[x]  for x in 1:length(stages))
+        title      = "Optimization — Load Shed at Stopping Stage,  iter=$(iter)"
+    else
+        bin_cas=model[:slk_cas]
+        indices  = getfield.(getfield.(keys(bin_cas), :I), 1)
+        vals     = value.(bin_cas).data .>= 1e-4
+        stopat0= size.(casreps[CartesianIndex.(indices)],1).-1
+        stopat= vals.*stopat0
+        LNS_stop  = [casreps[CartesianIndex(indices[x])][stopat[x]+1, "LNS_T"]
+                for x in 1:length(indices)]
+        # stopat= (vals.==1) ? 0 : stopat0
+        tc_stopat = indices
+        optstage= (tc_stopat,stopat.+1)
+        labels_map = Dict(tc_stopat[x] => stopat[x]  for x in 1:length(indices))
+        title      = "Optimization — Load Shed at Stopping Stage,  iter=$(iter)"
+    end
+
+    # --- Build matrices ---
+    loadshed_map = Dict(tc_stopat[x] => LNS_stop[x] for x in 1:length(stopat))
+
+    LS = [get(loadshed_map, (t, c), casreps[t, c][end, "LNS_T"]) for c in 1:nCon, t in 1:nTP]
+    LB = [get(labels_map,   (t, c), 0)                           for c in 1:nCon, t in 1:nTP]
+
+    LS_plot = Float64.(LS)
+    LS_plot[LS .== 0.0 .&& LB .== 0] .= NaN
+
+    ls_max = sum(Glob["SysData"]["Load"][!, "Pd (pu)"]; init=0)
+
+    # --- Figure ---
+    fig = Figure(size = (fig_w, fig_h_tot), fontsize = fsize_ax)
+
+    ax = Axis(fig[1, 1];
+        title              = title,
+        xlabel             = "Time Period",
+        ylabel             = "Contingency",
+        xticks             = (1:nTP,  string.(1:nTP)),
+        yticks             = (1:nCon, string.(1:nCon)),
+        xticklabelrotation = π/4
+    )
+
+    hm = CairoMakie.heatmap!(ax, 1:nTP, 1:nCon, LS_plot';
+        colormap   = cgrad([:mistyrose, :red, :darkred]),
+        colorrange = (0, ls_max),
+        nan_color  = :lightgrey
+    )
+    if !isnothing(optstage) && !isnothing(cas_hist)
+        tc_hist=map(((t, _, c),) -> (t, c), cas_hist)
+        tc_histall = union(tc_hist, optstage[1])
+    else
+        tc_histall=[]
+    end
+    for t in 1:nTP, c in 1:nCon
+        ls        = LS[c, t]
+        lbl       = LB[c, t]
+        no_event  = ls == 0.0 && lbl == 0
+        fontcolor = ls >= 0.6 * ls_max ? :white : :black
+
+        if no_event
+            text!(ax, t, c;
+                text = "NC", align = (:center, :center), fontsize = fsize_cell, color = :grey)
+        elseif lbl == 0
+            # Load shed but no cascade — two lines
+            text!(ax, t, c + off2;
+                text = @sprintf("%.2f", ls), align = (:center, :center), fontsize = fsize_cell, color = fontcolor)
+            text!(ax, t, c - off2;
+                text = "MW",                 align = (:center, :center), fontsize = fsize_cell, color = fontcolor)
+        else
+            # Load shed + cascade — three lines
+            text!(ax, t, c + 0.4;
+                text = @sprintf("%.2f", ls), align = (:center, :center), fontsize = fsize_cell, color = fontcolor)
+            text!(ax, t, c+ 0.4 - linespace;
+                text = "MW",                 align = (:center, :center), fontsize = fsize_cell, color = fontcolor)
+            text!(ax, t, c - 0.4+linespace;
+                text = "s: $(lbl)",          align = (:center, :center), fontsize = fsize_cell, color = fontcolor)
+            #draw underline below s: $(lbl)
+            if (t, c) in tc_histall
+                lines!(ax, [t-0.3, t+0.3], [c - 0.41, c - 0.41];
+                    color = :blue, linewidth = 1.5)
+            end
+        end
+    end
+
+    #   text!(ax, 8, 5;
+    #             text = @sprintf("%.2f", ls), align = (:center, :center), fontsize = 9, color = fontcolor)
+
+
+    Colorbar(fig[1, 2], hm;
+        label    = "Load Shed (MW)",
+        ticks    = LinearTicks(5),
+        flipaxis = true
+    )
+
+    # --- Bottom row: table (left) + legend (right) ---
+    bottom = GridLayout(fig[2, 1:2])
+
+    # ── Table (left) ──────────────────────────────────────────
+    if reprow !== nothing
+        ax_t = Axis(bottom[1, 1])
+        hidedecorations!(ax_t)
+        hidespines!(ax_t)
+
+        # Grid definition
+        if isnothing(model) && isnothing(optstage)
+            cw = [0.07, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04]
+        else
+            cw = [0.07, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04]
+        end
+        # cw = [0.07, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04]
+        rh = [0.10, 0.10, 0.10, 0.10]
+        CairoMakie.xlims!(ax_t, 0, sum(cw))
+        CairoMakie.ylims!(ax_t, 0, sum(rh))
+
+        cx = cumsum([0; cw])
+        ry = cumsum([0; rh])
+        flip(y) = sum(rh) - y
+
+        cell_center_x(col) = (cx[col+1] + cx[col+2]) / 2
+        cell_center_y(row) = flip((ry[row+1] + ry[row+2]) / 2)
+
+        # Header backgrounds
+        for (span, clr) in [((0, 1:3), (:green, 0.15)), ((0, 4:6), (:darkorange, 0.15))]
+            row, cols = span
+            x0, x1 = cx[first(cols)+1], cx[last(cols)+2]
+            y0, y1 = flip(ry[row+2]), flip(ry[row+1])
+            poly!(ax_t, Point2f[(x0,y0),(x1,y0),(x1,y1),(x0,y1)];
+                color = clr, strokecolor = :lightgrey, strokewidth = 0.5)
+        end
+
+        if !isnothing(model) || !isnothing(optstage)
+            row, cols = 0 , 7:7
+            clr = (:steelblue, 0.15)
+            x0, x1 = cx[first(cols)+1], cx[last(cols)+2]
+            y0, y1 = flip(ry[row+3]), flip(ry[row+1])
+            poly!(ax_t, Point2f[(x0,y0),(x1,y0),(x1,y1),(x0,y1)];
+                color = clr, strokecolor = :lightgrey, strokewidth = 0.5)
+        end
+
+
+        # Grid lines
+        for (i, x) in enumerate(cx)
+            i > 1 && lines!(ax_t, [x, x], [0, sum(rh)-rh[end]]; color = :lightgrey, linewidth = 0.6)
+        end
+        lines!(ax_t, [cx[5], cx[5]], [0, sum(rh)]; color = :grey, linewidth = 1.2)
+        lines!(ax_t, [cx[8], cx[8]], [0, sum(rh)]; color = :grey, linewidth = 1.2)
+
+        # Row 0: Pre / Post headers
+        text!(ax_t, (cx[2]+cx[5])/2, cell_center_y(0);
+            text="Pre-Contingency",  align=(:center,:center), fontsize = font_table, color=:green,  font=:bold)
+        text!(ax_t, (cx[5]+cx[8])/2, cell_center_y(0);
+            text="Post-Contingency", align=(:center,:center), fontsize = font_table, color=:darkorange, font=:bold)
+        if !isnothing(model)
+            text!(ax_t, (cx[8]+cx[9])/2, cell_center_y(0);
+                text="TR", align=(:center,:center), fontsize = font_table, color=:steelblue, font=:bold)
+        elseif (!isnothing(optstage))
+            text!(ax_t, (cx[8]+cx[9])/2, (cell_center_y(0)+cell_center_y(1))/2;
+                text="inacc", align=(:center,:center), fontsize = font_table, color=:steelblue, font=:bold)
+        end
+        # Row 1: column headers
+        for (col, lbl) in enumerate(["", "Max", "Mean", "N", "Max", "Mean", "N"])
+            text!(ax_t, cell_center_x(col-1), cell_center_y(1);
+                text=lbl, align=(:center,:center), fontsize = font_table, color=:black, font=:bold)
+        end
+
+        # Rows 2-3: data
+        foreach(col -> reprow[col] isa AbstractFloat && isnan(reprow[col]) && (reprow[col] = 0.0), names(reprow))
+        XX = (
+            voltage  = (pre  = (max  = max(reprow."Vmin_Abs", reprow."Vmax_Abs"),
+                                mean = (reprow."Vmin_N_M" * reprow."Vmin_N_N" + reprow."Vmax_N_M" * reprow."Vmax_N_N") / (reprow."Vmin_N_N" + reprow."Vmax_N_N"),
+                                n    = sum(reprow."Vmin_N_N" + reprow."Vmax_N_N")),
+                        post = (max  = max(reprow."Vmin_C_Abs", reprow."Vmax_C_Abs"),
+                                mean = (reprow."Vmin_C_M" * reprow."Vmin_C_N" + reprow."Vmax_C_M" * reprow."Vmax_C_N") / (reprow."Vmin_C_N" + reprow."Vmax_C_N"),
+                                n    = sum(reprow."Vmin_C_N" + reprow."Vmax_C_N"))),
+            lineflow = (pre  = (max  = reprow."Smax_N",   mean = reprow."Smax_N_M", n = reprow."Smax_N_N"),
+                        post = (max  = reprow."Smax_C",   mean = reprow."Smax_C_M", n = reprow."Smax_C_N")),
+        )
+        table_rows = [
+            ("Voltage (p.u)",   [XX.voltage.pre.max,   XX.voltage.pre.mean,   XX.voltage.pre.n,
+                                  XX.voltage.post.max,  XX.voltage.post.mean,  XX.voltage.post.n]),
+            ("Line Flow (p.u)", [XX.lineflow.pre.max,  XX.lineflow.pre.mean,  XX.lineflow.pre.n,
+                                  XX.lineflow.post.max, XX.lineflow.post.mean, XX.lineflow.post.n]),
+        ]
+
+        for (r, (label, vals)) in enumerate(table_rows)
+            row = r + 1
+            text!(ax_t, cx[2] - 0.01, cell_center_y(row);
+                text=label, align=(:right,:center), fontsize=font_table, color=:black, font=:bold)
+            for (col, val) in enumerate(vals)
+                text!(ax_t, cell_center_x(col), cell_center_y(row);
+                    text  = col in [3,6] ? string(round(Int, val)) : @sprintf("%.3f", val),
+                    align = (:center, :center),
+                    fontsize = font_table)
+            end
+        end
+        if !isnothing(model)
+            text!(ax_t, cell_center_x(7), cell_center_y(1);text  = "size",align = (:center, :center),fontsize = font_table,color=:steelblue)
+            text!(ax_t, cell_center_x(7), cell_center_y(2);text  = @sprintf("%.3f", model[:TR][2]),align = (:center, :center),fontsize = font_table)
+            text!(ax_t, cell_center_x(7), cell_center_y(3);text  = @sprintf("%.3f", model[:TR][1]),align = (:center, :center),fontsize = font_table)
+        elseif (!isnothing(optstage))
+            optstage_tc=CartesianIndex.(optstage[1])
+            optstage_s=optstage[2]
+            inacc=0
+            iworst=0
+            for i in 1:length(optstage_tc)
+                if optstage_s[i]< size(casreps[optstage_tc[i]],1)
+                    inacc_s= maximum(casreps[optstage_tc[i]][optstage_s[i], "VM"];init=0) .- Glob["I_relax"]
+                    if inacc_s>inacc
+                        inacc=inacc_s
+                        iworst=i
+                    end
+                end
+            end
+            text!(ax_t, cell_center_x(7), cell_center_y(2);text  = "-",align = (:center, :center),fontsize = font_table)
+            text!(ax_t, cell_center_x(7), cell_center_y(3);text  = @sprintf("%.3f", inacc),align = (:center, :center),fontsize = font_table)
+        end
+
+        # colsize!(bottom, 1, Relative(0.5))
+        colsize!(bottom, 1, fig_w/2 * ( (isnothing(model) && isnothing(optstage)) ? 1 : (35/31)))
+
+    end
+
+    rowsize!(fig.layout, 2, fig_h_tot - fig_h)
+
+    # ── Legend (right) ────────────────────────────────────────
+    Legend(bottom[1, reprow === nothing ? (1:2) : 2],
+        [PolyElement(color = :lightgrey)],
+        ["NC — no cascade and no load shed"],
+        orientation = :vertical,
+        tellwidth   = false,
+        tellheight  = false,
+        valign      = :center,
+        halign      = :right
+    )
+
+    rowgap!(fig.layout, 1, 6)
+    return fig,optstage
+end
+
+function XXmodel(Glob,OP_init,model)
+    Vdiffmax= OP_init["V"].-(Glob["SysData"]["Bus"]."V_max (pu)")'
+    Vviomax_0 = Vdiffmax[CartesianIndex.(model[:slkDataFrame]["slkVmax"])]
+    Vviomax= filter(x->x>1e-6,Vviomax_0 .* value(model[:slk_Vmax]))
+    Vdiffmin= (Glob["SysData"]["Bus"]."V_min (pu)")' .-OP_init["V"]
+    Vviomin_0 = Vdiffmin[CartesianIndex.(model[:slkDataFrame]["slkVmin"])]
+    Vviomin= filter(x->x>1e-6,Vviomin_0 .* value(model[:slk_Vmin]))
+    Vdiffmax_C= OP_init["V_c_Line"].-(Glob["SysData"]["Bus"]."V_max (pu)")'
+    Vviomax_C_0 = Vdiffmax_C[CartesianIndex.(model[:slkDataFrame]["slkVmax_c"])]
+    Vviomax_C= filter(x->x>1e-6,Vviomax_C_0 .* value(model[:slk_Vmax_c]))
+    Vdiffmin_C= (Glob["SysData"]["Bus"]."V_min (pu)")' .-OP_init["V_c_Line"]
+    Vviomin_C_0 = Vdiffmin_C[CartesianIndex.(model[:slkDataFrame]["slkVmin_c"])]
+    Vviomin_C= filter(x->x>1e-6,Vviomin_C_0 .* value(model[:slk_Vmin_c]))
+
+    Idiffmax= sqrt.(value.(model[:Line_flow])) .- (Glob["SysData"]["Line"]."RATE_A")'
+    Iviomax= filter(x->x>1e-6,Idiffmax[CartesianIndex.(model[:slkDataFrame]["slkImax"])])
+    Idiffmax_C= sqrt.(value.(model[:Line_flow_c_Line])) .- (Glob["SysData"]["Line"]."RATE_A")'
+    Iviomax_C= filter(x->x>1e-6,Idiffmax_C[CartesianIndex.(model[:slkDataFrame]["slkImax_c"])])
+    rep=DataFrame(Vmin_Abs= maximum(Vviomin;init=0), Vmax_Abs= maximum(Vviomax;init=0), Vmin_C_Abs= maximum(Vviomin_C;init=0), Vmax_C_Abs= maximum(Vviomax_C;init=0), Vmin_N_M= mean(Vviomin), Vmax_N_M= mean(Vviomax), Vmin_C_M= mean(Vviomin_C), Vmax_C_M= mean(Vviomax_C), Vmin_N_N= length(Vviomin), Vmax_N_N= length(Vviomax), Vmin_C_N= length(Vviomin_C), Vmax_C_N= length(Vviomax_C), Smax_N= maximum(Iviomax;init=0), Smax_C= maximum(Iviomax_C;init=0), Smax_N_M= mean(Iviomax), Smax_C_M= mean(Iviomax_C), Smax_N_N= length(Iviomax), Smax_C_N= length(Iviomax_C))
+    return rep[1,:]
+end
+
+
+function makecasfig(key,figs,path)
+    outdir = path * "../Result/Iter_Report/Figs"
+    mkpath(outdir)
+
+    key_clean = replace(string(key), r"[/\\:*?\"<>|()]" => "_")
+    outpath   = joinpath(outdir, "$(key_clean).pdf")
+    tmpfiles  = [tempname() * ".pdf" for _ in figs]
+
+    for (i, fig) in enumerate(figs)
+        save(tmpfiles[i], fig)
+    end
+
+    # Pass as a proper Cmd vector — avoids path concatenation issue
+    run(Cmd(["pdfunite", tmpfiles..., outpath]))
+    foreach(rm, tmpfiles)
+
+    println("Saved: $outpath")
 end

@@ -137,9 +137,8 @@ function csc_i(bi, G, Ld, BAT, REN, Gcas)
         Gcas.Gt[gmain] = Gcas.Gt[gmain] + G[gi, 2] 
         G[gi, 2] .= zeros(length(gi), 1)
         flag = 3
-    elseif sum(G_i[:, 2])+sum(Ren_i[:, "PG"])+sum(filter(x -> x > 0, Bat_i[:, "Ps"]);init=0) == 0 && sum(Ld_i[:, 2])-sum(filter(x -> x < 0, Bat_i[:, "Ps"]);init=0) == 0   # every thing off
+    elseif sum(G_i[:, 2])+sum(Ren_i[:, "PG"];init=0)+sum(filter(x -> x > 0, Bat_i[:, "Ps"]);init=0) == 0 && sum(Ld_i[:, 2])-sum(filter(x -> x < 0, Bat_i[:, "Ps"]);init=0) == 0   # every thing off
         flag = 4
-    
     elseif fr2(G_i, Ld_i, BAT, REN) > df_maxmax || fr2(G_i, Ld_i, BAT, REN) < -df_minmin
         Gcas.LdI[dmain] = 4 * ones(length(di), 1)
         Gcas.Ldsh_f[dmain] =Gcas.Ldsh_f[dmain]+ Ld[di, 2]
@@ -152,11 +151,10 @@ function csc_i(bi, G, Ld, BAT, REN, Gcas)
         REN[reni, "PG"] .= zeros(length(reni), 1)
         REN[reni, "QG"] .= zeros(length(reni), 1)
         flag = 5
-    
     elseif length(bi) == 1 && G[gi, 1] == Ld[di, 1]
         G_i = G[gi, :]                         # one bus consisting of g&d
         Ld_i = Ld[di, :]
-        (G_i, Ld_i, df_i, blkout, Gcas) = floop3(G, Ld, Gcas, BAT, REN)
+        (G_i, Ld_i, df_i, blkout, Gcas) = floop3(G_i, Ld_i, Gcas, Bat_i, Ren_i)
         G[gi, 2] = G_i[:, 2]
         Ld[di, 2] = Ld_i[:, 2]
         Ld[di, 3] = Ld_i[:, 3]

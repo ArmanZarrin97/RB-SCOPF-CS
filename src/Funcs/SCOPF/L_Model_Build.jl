@@ -30,7 +30,7 @@ function Initialize_Model(LinMethod)
         set_attribute(model,"CPXPARAM_Barrier_QCPConvergeTol",1.5e-5)
         # set_attribute(model,"CPXPARAM_Barrier_QCPConvergeTol",1e-5)
         set_attribute(model, "CPXPARAM_Simplex_Tolerances_Feasibility", 1.5e-5)
-        set_attribute(model, "CPXPARAM_MIP_Tolerances_MIPGap", 1.5e-3)
+        set_attribute(model, "CPXPARAM_MIP_Tolerances_MIPGap", 0.005)
         set_attribute(model, "CPXPARAM_Simplex_Tolerances_Optimality", 1.5e-5)
         set_attribute(model, "CPXPARAM_MIP_Tolerances_Linearization", 1.5e-5)
         set_attribute(model, "CPXPARAM_Network_Tolerances_Optimality", 1.5e-5)
@@ -234,8 +234,9 @@ elseif LinMethod=="SENS"
         @expression(SCOPF,cost_TR_relaxC, 0)
     end
     if haskey(SCOPF.obj_dict,:bin_Cas) && !isempty(SCOPF[:bin_Cas])
-        cascade_penalty=sum(SCOPF[:bin_Cas].*CascadeInfo["LNS_Cascade"]).*coef6
+        cascade_penalty=sum(SCOPF[:bin_Cas].*CascadeInfo["LNS_Cascade"]).*coef6 #* 0.001
         @expression(SCOPF,cascade_penalty, cascade_penalty)
+        @expression(SCOPF,Worst_slk_Pen, 0)
     elseif haskey(SCOPF.obj_dict,:slk_cas) && !isempty(SCOPF[:slk_cas])
         cascade_penalty=sum(SCOPF[:slk_cas].*CascadeInfo["LNS_tc"]).*coef6
         @expression(SCOPF,cascade_penalty, cascade_penalty)
@@ -845,12 +846,15 @@ function Cascade_L_PB( SCOPF::Model,nTP::Int64,raw::Dict{String, Any},casreps::M
     @expression(SCOPF, diffOpt_expr[k=1:length(line_Cascade)], (SENS_Cascade[k,:])'*[ΔPinj ΔQinj][tcs_Cascade[k][1],:])
     # casreps[12,33]
 
-    
     if Risk_cascade
         @variable(SCOPF, bin_Cas[(t,c,s) in all_idx], Bin)
+        @threads for (t, c, s) in all_idx
+            hint = s==1 ? 1.0 : 0.0
+            set_start_value(bin_Cas[(t, c, s)], hint)
+        end
         @constraint(SCOPF,CNcas_bin[(t,c) in tups], sum(bin_Cas[(t,c,key.I[1][3])] for key in keys(bin_Cas) if key.I[1][1] == t && key.I[1][2] == c) >= 1)
         @constraint(SCOPF, CNcascade_LP1[k=1:length(line_Cascade)], (SENS_Cascade[k,:])'*[ΔPinj ΔQinj][tcs_Cascade[k][1],:] <= (-diffVm[k])*Imaxlimit0[line_Cascade[k]]+ 2000*Imaxlimit0[line_Cascade[k]]*(1-bin_Cas[tcs_Cascade[k]]) )
-    else 
+    else
         # @constraint(SCOPF,CNcas_bin[(t,c) in tups], bin_Cas[(t,c,1)] == 1)
         @variable(SCOPF, slk_cas[(t,c) in tups] >= 0)
         idx_f=findall(((t,c,s),) -> s==1, tcs_Cascade[:,1])

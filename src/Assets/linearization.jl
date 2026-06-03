@@ -503,7 +503,9 @@ end
 
 function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
     #BItermax=1;
-    # relaxpermit= Glob["relaxpermit"]
+    relaxpermit= Glob["relaxpermit"]
+    Runcode=Glob["Runcode"]
+    monte_carlo=Glob["monte_carlo"]
     iter=0;BIter=0;sol_time=0;res_time=0;Best_Iter=0;Best_sol_time=0;Best_res_time=0;LNSs=0;Best_Cas_MW=0; Best_Cas_MW_mean=0;
     #----------------------------Check initial operating point -------------------------------------------
     Ncost0,Vio_Sum_N0,Vio_general_N0,AVG_C_cost0,Vio_Sum_C0,OP_init0V,Vio_general_C0,min_infmax_C,casreps0,casreps_NLP=0,0,0,0,0,0,0,0,0,0
@@ -511,15 +513,7 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
     # Vio_general_C0[1,33]
     try
         Ncost0,Vio_Sum_N0,Vio_general_N0,AVG_C_cost0,Vio_Sum_C0,OP_init0V,Vio_general_C0,casreps0,a8=AC_PFCheck(OP_init0,Glob);
-
         a0,a1,a2,a3,a4,a5,a6,casreps_NLP,a7=AC_PFCheck(OP_NLP,Glob);
-
-
-        # LNSs=[casreps[t,i][end,"LNS_T"] for t in 1:nTL, i in 1:size(Glob["SysData"]["ConL"],1)]
-        # findall(x-> size(x,1)>1, casreps0)
-        # casreps0[21,5]
-        # casreps0[21,5][5,9]
-        # Vio_general_C0[1,1]
         GC.gc()
     catch e
         @warn "PF not converged"
@@ -581,14 +575,17 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
     cas_hist=[]
     Runcode= Glob["Runcode"]
     # Glob["Cascade_Opt"]=true
-    Glob["Risk_cascade"]= false
+    Glob["Risk_cascade"]= true
     Cascade_Opt=Glob["Cascade_Opt"]
-    # Cascade_Opt=false
+    # Cascade_Opt=false; Glob["Risk_cascade"]= false
     # Glob["I_relax"]=1.1
     Cascade_Rep=Make_cascade_Rep(casreps_NLP,OP_NLP,LNS_cas_NLP)
     Cascade_Rep=Add_Cascade_Rep!(casreps,LNS_cas,Glob,Cascade_Rep,Best_solution,mincost,minOptGap,iter,0,0,[[0 0] [0 0] [0 0] [0 0]])
- 
-
+    Cascade_snapshots=[(make_cascade_stopping_stage_plot4(Glob, casreps,iter;reprow=Iter_Rep[end,:]))[1]]
+    # casreps[2,1]
+    # figtest=(make_cascade_stopping_stage_plot4(Glob, casreps,iter;reprow=Iter_Rep[end,:]))[1]
+    # save(Glob["Path"] * "../Result/test.png", figtest;dpi=4000,pxperunit=10)    # casreps[2,5]
+    optstage=nothing
 
     while iter <10 && res_time<=600
         iter=iter+1;
@@ -597,6 +594,15 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
                 if Runcode[2]!=5
                     if Cascade_Opt
                         OP,out,model=Optimizer(Glob, Linearization_TYPE[Runcode[2]],deepcopy(OP_init),casreps,h_cas)
+                        if Runcode[2]==3
+                            fig_,optstage=make_cascade_stopping_stage_plot4(Glob, casreps, iter, model;reprow= XXmodel(Glob,OP_init,model))
+                            push!(Cascade_snapshots, fig_)
+                        end
+                        # dictopt=Dict(zip(optstage[1],optstage[2]))
+                        # optstage[1]
+                        # optstage[2]
+                        # zip.(optstage[1],optstage[2])
+                        # Cascade_snapshots[3]
                         # casreps[1,3]
                         # println("Worst_slk_cascade:",value.(model[:Worst_slk_cas]))
 
@@ -608,14 +614,26 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
                         # value.(model[:CNcascade_LP1])
                         # Plots.plot(model[:Vm_Cascade_expr])
                         # Plots.plot!(model[:Vm_Cascade_expr] .+ value.(model[:diffOpt_expr]))
-                        # value.(model[:slk_cas])    
+                        # value.(model[:slk_cas])
                         # model[:bin_Cas]
                         # arr=value.(model[:bin_Cas])
                         # idx_ones = findall(x -> x==1.0, arr.data)
                         # (arr.axes)[1][idx_ones]
                         # value.(model[:CNcascade_hist])
                         # h_cas
-                        append!(cas_hist,setdiff(get_cascade_stage1_new(model[:CascadeInfo]),cas_hist))
+                        append!(cas_hist,setdiff(get_cascade_stage1_new(model[:CascadeInfo],Dict(zip(optstage[1],optstage[2]))),cas_hist))
+
+                        # append!(cas_hist,setdiff(get_cascade_stage1_new(model[:CascadeInfo]),cas_hist))
+
+
+
+                        # cascade_info=model[:CascadeInfo]
+                        # fstage=findall(x-> x[3]==1,cascade_info["tcs_Cascade"][:,])
+                        # # cascade_info["tcs_Cascade"][fstage,1]
+                        # # i,j=last(enumerate(cascade_info["tcs_Cascade"][fstage,1]))
+                        # cashist=[(j[1], cascade_info["line_Cascade"][fstage,1][i], j[2]) for (i, j) in enumerate(cascade_info["tcs_Cascade"][fstage,1])]
+
+
                         # diffOpt_expr
                         # value.(model[:diffOpt_expr])
 
@@ -805,6 +823,9 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
         try
             Ncost,Vio_Sum_N,Vio_general_N,AVG_C_cost,Vio_Sum_C,OP_Valid,Vio_general_C,casreps2,h_cas2=AC_PFCheck(OP,Glob,cas_hist)
             LNS_cas,LNSs=LNS_cal(casreps2)
+
+
+            # casreps2[2,5]
             # LNSs=[casreps[t,i][end,"LNS_T"] for t in 1:nTL, i in 1:size(Glob["SysData"]["ConL"],1)]
             # findall(x-> size(x,1)>1, casreps)
             # (13,12,4) in cas_hist
@@ -848,6 +869,8 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
 
             Cascade_Rep=Add_Cascade_Rep!(casreps2,LNS_cas,Glob,Cascade_Rep,OP_Valid,sum(cost),OptGap,iter,sol_time,res_time)
             display(Cascade_Rep)
+            push!(Cascade_snapshots, (make_cascade_stopping_stage_plot4(Glob, casreps2,iter;reprow=Iter_Rep[end,:],optstage=optstage,cas_hist=cas_hist))[1])
+            # Cascade_snapshots[end]
 
             Cas_MW_max= Cascade_Rep[end,"Worst_Cas_MW"]
             Cas_MW_mean= Cascade_Rep[end,"Mean_Cas_MW"]
@@ -936,7 +959,7 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
         end
         # ods_write(Path*"../Result/Iter_Report/"*Problem_Type*string(Runcode),Dict(("General",1,1)=>Iter_Rep))
     end
-    return mincost,Best_solution,Best_Iter,min_infmax_N,min_infmax_C,minOptGap,Best_vio_general_N,Best_vio_sum_N,Best_vio_general_C,Best_vio_sum_C,Best_sol_time,Best_res_time,Best_Cas_MW, Best_Cas_MW_mean
+    return mincost,Best_solution,Best_Iter,min_infmax_N,min_infmax_C,minOptGap,Best_vio_general_N,Best_vio_sum_N,Best_vio_general_C,Best_vio_sum_C,Best_sol_time,Best_res_time,Best_Cas_MW, Best_Cas_MW_mean,Cascade_snapshots
 end
 
 function SLP_Report_Prepare(init_model,init_out)

@@ -23,7 +23,7 @@ function total_i(B, L, T, G, Ld, Shu, REN, BAT, Gcas)
     lines =  Tuple{Int, Int}.(eachrow(L[:, 1:2])) 
     trans =  Tuple{Int, Int}.(eachrow(T[:, 1:2])) 
     lines =  vcat(lines, trans)
-    
+
     u = find_islands(buses, lines)
 
 

@@ -2511,6 +2511,7 @@ function Sensitivity_constraints(Glob, LSCOPF,CascadeInfo,N_Var,C_Var,OPFon,raw,
     # maxP,minP,maxQ,minQ= N_Var[15]
     # Pbus=raw["PActBus"],Qbus=raw["QActBus"]
     # P=maxP[:,Pbus];P=minP[:,Pbus];maxQ=maxQ[:,Qbus];minQ=minQ[:,Qbus]
+    LSCOPF[:TR]=TR
     Lininit["TR"]=TR
     # Ovr_Sens_N=[Ovr_Sens[i][:,:,1] for i in eachindex(Ovr_Sens)]
     # C_LSCOPF=copy(LSCOPF)
