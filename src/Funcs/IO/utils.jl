@@ -3484,7 +3484,7 @@ end
 function findTR_P_coupled2(nTP,CascadeInfo, Base_TR_N,Base_TR_C,I2_0,Imaxlimit0,S_IP,V_0,Vmaxlimit0,Vminlimit0,S_VP,PBound,raw,cl,acc_V0)
 
     # acc_V0=0.05
-    
+
     Imaxlimit0_sqrt=sqrt.(Imaxlimit0)
     z0=0
     zmax=round(size(Imaxlimit0)[1]*size(Imaxlimit0)[2]*size(Imaxlimit0)[3]*P_con_percent)+1
@@ -3573,9 +3573,16 @@ function findTR_P_coupled2(nTP,CascadeInfo, Base_TR_N,Base_TR_C,I2_0,Imaxlimit0,
     S_VP_neg = min.(S_VP_4D, 0.0)
     S_IP_pos = max.(S_IP_4D, 0.0)
     S_IP_neg = min.(S_IP_4D, 0.0)
-    if !isempty(CascadeInfo) 
-        firstind=findall(x->x[3]==1,CascadeInfo["tcs_Cascade"]) 
+    if !isempty(CascadeInfo)
+        if !isnothing(CascadeInfo["optimal_tcs"])
+            firstind=findall(x->x in CascadeInfo["optimal_tcs"],CascadeInfo["tcs_Cascade"])
+        else
+            firstind=findall(x->x[3]==1,CascadeInfo["tcs_Cascade"])
+        end
         I_relax=CascadeInfo["I_relax"]
+
+        # casreps[4,4]
+        # optstage[3][8]
     end
     while TR_max - TR_min > 1e-7 # Stop when the range is small enough
         if iter==0
@@ -3736,7 +3743,7 @@ end
 # cascade_info=model[:CascadeInfo]
 # Dictopt=Dict(zip(optstage[1],optstage[2]))
 function get_cascade_stage1_new(cascade_info,Dictopt)
-    fstage=findall(x-> x[3]==1 && Dictopt[(x[1], x[2])]==1,cascade_info["tcs_Cascade"][:,])
+    fstage=findall(x-> x[3]==1 ,cascade_info["tcs_Cascade"][:,]) #&& Dictopt[(x[1], x[2])]==1
     # cascade_info["tcs_Cascade"][fstage,1]
     # i,j=last(enumerate(cascade_info["tcs_Cascade"][fstage,1]))
     cashist=[(j[1], cascade_info["line_Cascade"][fstage,1][i], j[2]) for (i, j) in enumerate(cascade_info["tcs_Cascade"][fstage,1])]
@@ -4631,7 +4638,7 @@ function make_cascade_stopping_stage_plot3(Glob, casreps, iter, model=nothing; r
     return fig
 end
 
-function make_cascade_stopping_stage_plot4(Glob, casreps, iter, model=nothing; reprow=nothing, optstage=nothing,cas_hist=nothing)
+function make_cascade_stopping_stage_plot4(Glob, casreps, iter, model=nothing; reprow=nothing, optstage=nothing,h_cas=nothing)
 
     nCon = size(Glob["SysData"]["ConL"], 1)
     nTP  = Glob["nTL"]
@@ -4653,6 +4660,7 @@ function make_cascade_stopping_stage_plot4(Glob, casreps, iter, model=nothing; r
     # line_h = fsize_cell * (nCon / (fig_h - 150))   # axis units per line of text
     linespace = 0.2*1.1
     # padding = cell_h / fsize_cell
+    optstage_out = nothing
 
     if isnothing(model)
         # --- Simulation ---
@@ -4685,7 +4693,9 @@ function make_cascade_stopping_stage_plot4(Glob, casreps, iter, model=nothing; r
         # @assert length(tc_all) == length(stages)
         stopat    = getfield.(indices[stages], 3) .- 1
         tc_stopat = map(((t, c, _),) -> (t, c), indices[stages])
-        optstage= (tc_stopat,stopat.+1)
+        elements  = [casreps[CartesianIndex(tc_stopat[x])][stopat[x]+1, "LL"]
+                for x in 1:length(stages)]
+        optstage_out= (tc_stopat,stopat.+1,elements)
         LNS_stop  = [casreps[CartesianIndex(tc_stopat[x])][stopat[x]+1, "LNS_T"]
                      for x in 1:length(stages)]
         labels_map = Dict(tc_stopat[x] => stopat[x]  for x in 1:length(stages))
@@ -4700,7 +4710,9 @@ function make_cascade_stopping_stage_plot4(Glob, casreps, iter, model=nothing; r
                 for x in 1:length(indices)]
         # stopat= (vals.==1) ? 0 : stopat0
         tc_stopat = indices
-        optstage= (tc_stopat,stopat.+1)
+        elements = [casreps[CartesianIndex(indices[x])][stopat[x]+1, "LL"]
+                for x in 1:length(indices)]
+        optstage_out= (tc_stopat,stopat.+1,elements)
         labels_map = Dict(tc_stopat[x] => stopat[x]  for x in 1:length(indices))
         title      = "Optimization — Load Shed at Stopping Stage,  iter=$(iter)"
     end
@@ -4733,17 +4745,40 @@ function make_cascade_stopping_stage_plot4(Glob, casreps, iter, model=nothing; r
         colorrange = (0, ls_max),
         nan_color  = :lightgrey
     )
-    if !isnothing(optstage) && !isnothing(cas_hist)
-        tc_hist=map(((t, _, c),) -> (t, c), cas_hist)
-        tc_histall = union(tc_hist, optstage[1])
+    if !isnothing(optstage) #&& !isnothing(cas_hist)
+        # tc_hist_red=map(((t, _, c),) -> (t, c), cas_hist)
+        optdict=Dict(zip(optstage[1],optstage[2]))
+        # casreps[CartesianIndex(optstage[1][x])][optstage[2][x]-1,"LL"] == optstage[3][x]
+        # findall(x-> optstage[2][x]>=size(casreps[CartesianIndex(optstage[1][x])],1) ,1:length(optstage[1]))
+        tc_hist_green=findall(x-> optdict[x]>=size(casreps[CartesianIndex(x)],1),optstage[1])
+        # tc_hist_red_1=findall(x-> optdict[x]<size(casreps[CartesianIndex(x)],1),optstage[1])
+
+        # findall(x-> optstage[2][x]<size(casreps[CartesianIndex(optstage[1][x])],1) ,1:length(optstage[1]))
+        # tc_hist_red= findall(x-> ,1:length(optstage[1]))
+        tc_hist_red_1=findall(x-> optstage[2][x]<size(casreps[CartesianIndex(optstage[1][x])],1) && issubset(casreps[CartesianIndex(optstage[1][x])][optstage[2][x],"LL"], optstage[3][x]) ,1:length(optstage[1]))
+        tc_all= findall(x-> size(x,1)>1 || x[1,"LNS_T"]>0,casreps)
+        tc_rem= setdiff(tc_all, CartesianIndex.(union(optstage[1][tc_hist_red_1],optstage[1][tc_hist_green])))
+        tc_red=tc_rem[findall(x-> all([ hasproperty(h_cas,:tup) && ((x[1],casreps[x][1,"LL"][i],x[2]) in h_cas.tup) for i=1:length(casreps[x][1,"LL"])]) , tc_rem)]
+        tc_new=setdiff(tc_rem, tc_red)
+        greenbar= Dict(zip(optstage[1][tc_hist_green], optstage[2][tc_hist_green]))
+        redbar= Dict(zip(optstage[1][tc_hist_red_1], optstage[2][tc_hist_red_1]))
+        for x in tc_red
+            # if (x[1],x[2]) in optstage[1]
+            #     redbar[(x[1],x[2])]= optdict[(x[1],x[2])]
+            # else
+                redbar[(x[1],x[2])]= 1
+            # end
+        end
     else
-        tc_histall=[]
+        tc_new=[]
+        greenbar=Dict()
+        redbar=Dict()
     end
     for t in 1:nTP, c in 1:nCon
         ls        = LS[c, t]
         lbl       = LB[c, t]
         no_event  = ls == 0.0 && lbl == 0
-        fontcolor = ls >= 0.6 * ls_max ? :white : :black
+        fontcolor = ls >= 0.5 * ls_max ? :white : :black
 
         if no_event
             text!(ax, t, c;
@@ -4760,13 +4795,22 @@ function make_cascade_stopping_stage_plot4(Glob, casreps, iter, model=nothing; r
                 text = @sprintf("%.2f", ls), align = (:center, :center), fontsize = fsize_cell, color = fontcolor)
             text!(ax, t, c+ 0.4 - linespace;
                 text = "MW",                 align = (:center, :center), fontsize = fsize_cell, color = fontcolor)
-            text!(ax, t, c - 0.4+linespace;
+            text!(ax, t, c - 0.35+linespace;
                 text = "s: $(lbl)",          align = (:center, :center), fontsize = fsize_cell, color = fontcolor)
             #draw underline below s: $(lbl)
-            if (t, c) in tc_histall
-                lines!(ax, [t-0.3, t+0.3], [c - 0.41, c - 0.41];
-                    color = :blue, linewidth = 1.5)
+            if CartesianIndex(t, c) in tc_new
+                text!(ax, t, c - 0.4;
+                    text = "*NEW*",      align = (:center, :center), fontsize = fsize_cell-3, color = fontcolor)
+            elseif (t, c) in keys(redbar)
+                lines!(ax, [t-0.3, t+0.3], [c - 0.375+linespace/2, c - 0.375+linespace/2];
+                    color = :black, linewidth = 1.5)
+                text!(ax, t, c - 0.4;
+                    text = "s: $(redbar[(t, c)]-1)| $(round(maximum(casreps[t,c][redbar[(t, c)],"VM"])-Glob["I_relax"],digits=3))",      align = (:center, :center), fontsize = fsize_cell-2, color = fontcolor)
+            elseif (t, c) in keys(greenbar)
+                lines!(ax, [t-0.3, t+0.3], [c - 0.375+linespace/2, c - 0.375+linespace/2];
+                    color = :Green, linewidth = 1.5)
             end
+
         end
     end
 
@@ -4890,14 +4934,18 @@ function make_cascade_stopping_stage_plot4(Glob, casreps, iter, model=nothing; r
             optstage_s=optstage[2]
             inacc=0
             iworst=0
-            for i in 1:length(optstage_tc)
-                if optstage_s[i]< size(casreps[optstage_tc[i]],1)
+            for i in 1:length(tc_red)
+                    inacc_s= maximum(casreps[tc_red[i]][1, "VM"];init=0) .- Glob["I_relax"]
+                    if inacc_s>inacc
+                        inacc=inacc_s
+                    end
+            end
+            for i in tc_hist_red_1
                     inacc_s= maximum(casreps[optstage_tc[i]][optstage_s[i], "VM"];init=0) .- Glob["I_relax"]
                     if inacc_s>inacc
                         inacc=inacc_s
                         iworst=i
                     end
-                end
             end
             text!(ax_t, cell_center_x(7), cell_center_y(2);text  = "-",align = (:center, :center),fontsize = font_table)
             text!(ax_t, cell_center_x(7), cell_center_y(3);text  = @sprintf("%.3f", inacc),align = (:center, :center),fontsize = font_table)
@@ -4922,7 +4970,7 @@ function make_cascade_stopping_stage_plot4(Glob, casreps, iter, model=nothing; r
     )
 
     rowgap!(fig.layout, 1, 6)
-    return fig,optstage
+    return fig,optstage_out
 end
 
 function XXmodel(Glob,OP_init,model)
@@ -4965,4 +5013,27 @@ function makecasfig(key,figs,path)
     foreach(rm, tmpfiles)
 
     println("Saved: $outpath")
+end
+
+function opt_tcs(optstage,casreps)
+        optdict=Dict(zip(optstage[1],optstage[2]))
+        # casreps[CartesianIndex(optstage[1][x])][optstage[2][x]-1,"LL"] == optstage[3][x]
+        # findall(x-> optstage[2][x]>=size(casreps[CartesianIndex(optstage[1][x])],1) ,1:length(optstage[1]))
+        tc_hist_green=findall(x-> optdict[x]>=size(casreps[CartesianIndex(x)],1),optstage[1])
+        # tc_hist_red_1=findall(x-> optdict[x]<size(casreps[CartesianIndex(x)],1),optstage[1])
+        greentc= tuple.(getindex.(optstage[1][tc_hist_green],1), getindex.(optstage[1][tc_hist_green],2), optstage[2][tc_hist_green])
+
+        tc_hist_red_1=findall(x-> optstage[2][x]<size(casreps[CartesianIndex(optstage[1][x])],1) && issubset(casreps[CartesianIndex(optstage[1][x])][optstage[2][x],"LL"], optstage[3][x]) ,1:length(optstage[1]))
+        redtc= tuple.(getindex.(optstage[1][tc_hist_red_1],1), getindex.(optstage[1][tc_hist_red_1],2), optstage[2][tc_hist_red_1])
+
+        tc_all= findall(x-> size(x,1)>1 || x[1,"LNS_T"]>0,casreps)
+        tc_new= (setdiff(tc_all, CartesianIndex.(union(optstage[1][tc_hist_red_1],optstage[1][tc_hist_green]))))
+
+        # tc_red=tc_rem[findall(x-> all([((x[1],casreps[x][1,"LL"][i],x[2]) in cas_hist) for i=1:length(casreps[x][1,"LL"])]) , tc_rem)]
+        # redtc2= tuple.(getindex.(tc_red,1), getindex.(tc_red,2),    map(x -> x.I in optstage[1] ? optdict[x.I] : 1, tc_red))
+        # tc_new=setdiff(tc_rem, tc_red)
+        newtc= tuple.(getindex.(tc_new,1), getindex.(tc_new,2), 1)
+
+        contind = isempty([redtc;newtc]) ? 0 : 1
+        return [greentc;redtc;newtc] , contind
 end

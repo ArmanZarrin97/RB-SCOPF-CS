@@ -80,7 +80,7 @@ function Initialize(Glob,type_,out,init_model,DA_out,DA_model)
     return Lin_init
 end
 
-function Optimizer(Glob, LinMethod,OP_init,casreps=nothing,h_cas=DataFrame())
+function Optimizer(Glob, LinMethod,OP_init,casreps=nothing,h_cas=DataFrame(); optimal_tcs=nothing)
     # casreps=nothing
     # LinMethod=Linearization_TYPE[Runcode[2]];
     OP=Dict{String,Any}()
@@ -88,7 +88,7 @@ function Optimizer(Glob, LinMethod,OP_init,casreps=nothing,h_cas=DataFrame())
         out,model=DA_OPF(LinMethod=LinMethod,OP_init=OP_init)
     elseif Problem_Type in ["SCOPF", "RBOPF"]
         if Problem_Type == "RBOPF" relaxconfac=0.2 else relaxconfac=0.0 end
-        out,model= DA_SCOPF(Glob, casreps,h_cas;LinMethod=LinMethod,OP_init=OP_init,relaxconfac=relaxconfac)
+        out,model= DA_SCOPF(Glob, casreps,h_cas;LinMethod=LinMethod,OP_init=OP_init,relaxconfac=relaxconfac,optimal_tcs=optimal_tcs)
         OP["V_c_Line"]=sqrt.(value.(model[:CV2magexp])) ;OP["θ_c_Line"]=value.(model[:Cθexp]);OP["PG_c_Line"]=value.(model[:PG_c_Line]);OP["QG_c_Line"]=value.(model[:QG_c_Line])
         OP["Pshed_c_Line"]=value.(model[:shed_c_Line]);OP["Pcurt_c_Line"]=value.(model[:curt_c_Line]);OP["Pcurtc_c_Line"]=value.(model[:curtc_c_Line])
         OP["Pinc_c_Line"]=value.(model[:P_inc_c_Line]);OP["Pdec_c_Line"]=value.(model[:P_dec_c_Line]);OP["Pch_c_Line"]=value.(model[:P_ch_c_Line]);OP["Pdis_c_Line"]=value.(model[:P_dis_c_Line])
@@ -574,7 +574,7 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
     casreps2=DataFrame()
     cas_hist=[]
     Runcode= Glob["Runcode"]
-    # Glob["Cascade_Opt"]=true
+    Glob["Cascade_Opt"]=false
     Glob["Risk_cascade"]= true
     Cascade_Opt=Glob["Cascade_Opt"]
     # Cascade_Opt=false; Glob["Risk_cascade"]= false
@@ -586,21 +586,24 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
     # figtest=(make_cascade_stopping_stage_plot4(Glob, casreps,iter;reprow=Iter_Rep[end,:]))[1]
     # save(Glob["Path"] * "../Result/test.png", figtest;dpi=4000,pxperunit=10)    # casreps[2,5]
     optstage=nothing
-
+    optimal_tcs= nothing
+    contind=1
     while iter <10 && res_time<=600
         iter=iter+1;
         while true
             try
                 if Runcode[2]!=5
                     if Cascade_Opt
-                        OP,out,model=Optimizer(Glob, Linearization_TYPE[Runcode[2]],deepcopy(OP_init),casreps,h_cas)
+                        OP,out,model=Optimizer(Glob, Linearization_TYPE[Runcode[2]],deepcopy(OP_init),casreps,h_cas;optimal_tcs=optimal_tcs)
                         if Runcode[2]==3
                             fig_,optstage=make_cascade_stopping_stage_plot4(Glob, casreps, iter, model;reprow= XXmodel(Glob,OP_init,model))
                             push!(Cascade_snapshots, fig_)
                         end
                         # dictopt=Dict(zip(optstage[1],optstage[2]))
-                        # optstage[1]
-                        # optstage[2]
+                        # optstage[1][32]
+                        # optstage[2][32]
+                        # optstage[3]
+                        # casreps[12,5]
                         # zip.(optstage[1],optstage[2])
                         # Cascade_snapshots[3]
                         # casreps[1,3]
@@ -625,7 +628,7 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
 
                         # append!(cas_hist,setdiff(get_cascade_stage1_new(model[:CascadeInfo]),cas_hist))
 
-
+                        # casreps[2,5]
 
                         # cascade_info=model[:CascadeInfo]
                         # fstage=findall(x-> x[3]==1,cascade_info["tcs_Cascade"][:,])
@@ -672,12 +675,11 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
                         
                         # Plots.plot( OP_Valid["PG_c_Line"][1,:,2]-OP_init["PG_c_Line"][1,:,2])
                         # Plots.plot( OP_Valid["QG_c_Line"][1,:,2]-OP_init["QG_c_Line"][1,:,2])
-                        
 
                         # Plots.plot( OP["PG_c_Line"][1,:,2]-OP_Valid["PG_c_Line"][1,:,2])
                         # Plots.plot( OP["QG_c_Line"][1,:,2]-OP_Valid["QG_c_Line"][1,:,2])
-                            
-                       
+
+
                     end
                     # value.(model[:slack_Cascade_LP])
                     # maximum(value.(model[:slack_Cascade_LP]))
@@ -869,7 +871,15 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
 
             Cascade_Rep=Add_Cascade_Rep!(casreps2,LNS_cas,Glob,Cascade_Rep,OP_Valid,sum(cost),OptGap,iter,sol_time,res_time)
             display(Cascade_Rep)
-            push!(Cascade_snapshots, (make_cascade_stopping_stage_plot4(Glob, casreps2,iter;reprow=Iter_Rep[end,:],optstage=optstage,cas_hist=cas_hist))[1])
+            push!(Cascade_snapshots, (make_cascade_stopping_stage_plot4(Glob, casreps2,iter;reprow=Iter_Rep[end,:],optstage=optstage,h_cas=h_cas))[1])
+            if Cascade_Opt
+                optimal_tcs,contind=opt_tcs(optstage,casreps2)
+            else
+                contind=1
+            end
+            # optstage[3][32]
+            # optstage[1]
+            # optstage[2]
             # Cascade_snapshots[end]
 
             Cas_MW_max= Cascade_Rep[end,"Worst_Cas_MW"]
@@ -892,6 +902,7 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
             # raw["QActBus"]
             # Glob["SysData"]["Line"]."RATE_A"[57].^2
             # maximum(-OP["V"].+(Glob["SysData"]["Bus"]."V_min (pu)")')
+            # casreps2[8,4]
         catch e
             # rethrow(e)
             @error "PF not converged"
@@ -907,7 +918,12 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
             for k in collect(keys(OP_Valid))
                 OP_init[k]=OP_Valid[k]
             end 
-            h_cas=deepcopy(h_cas2)
+            h_cas_ind=findall(x-> x<= Glob["I_relax"],h_cas2."Vio")
+
+            # (21, 12, 4) in h_cas.tup
+            h_cas=h_cas2[h_cas_ind,:]
+            # cas_hist=cas_hist[h_cas_ind]
+            # h_cas=deepcopy(h_cas2)
             casreps=deepcopy(casreps2)
         else
             BIter+=1
@@ -940,7 +956,7 @@ function SLA_clean(Glob,OP_init0,OP_NLP;BItermax=4)
             Best_Cas_MW= Cas_MW_max
             Best_Cas_MW_mean= Cas_MW_mean
         end
-        if (max(Maxvio_N,Maxvio_C)<1e-4 && Cascade_Rep[end,"CasNum"]==0) || ( !Cascade_Opt && max(min_infmax_N,min_infmax_C)<1e-4) 
+        if (max(Maxvio_N,Maxvio_C)<1e-4 && (contind==0 || Cascade_Rep[end,"CasNum"]==0)) || ( !Cascade_Opt && max(min_infmax_N,min_infmax_C)<1e-4) 
             @info "Violations are removed"
             break
         end

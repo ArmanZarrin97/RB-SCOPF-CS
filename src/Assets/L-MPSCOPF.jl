@@ -3,7 +3,7 @@ include("../Funcs/SCOPF/L_Model_Build.jl")
 include("../Funcs/SCOPF/L_PowerFlow.jl")
 
 # export L_MPSCOPF
-function L_MPSCOPF(Glob,glob_input,Proffin,casreps,h_cas=DataFrame(); fixed_SOC_=1,conprob=0.05,OPFon=0,Winit=0,t0=1,WP=1,LinMethod="None",Lininit=Dict{String,Any}(),relaxconfac=0.0) #Array{Union{Float64,Array{Float64}}} # WP: without Penalty #OPFon: 0=>SCOPF, 1=>OPF #Winit: 0=>No initial value, 1=>Initial value #t0: first time period # fixed_SOC_: 0=>No fixed SOC, 1=>Fixed SOC # conprob: contingency probability summation # Proffin: Profile information
+function L_MPSCOPF(Glob,glob_input,Proffin,casreps,h_cas=DataFrame(); fixed_SOC_=1,conprob=0.05,OPFon=0,Winit=0,t0=1,WP=1,LinMethod="None",Lininit=Dict{String,Any}(),relaxconfac=0.0,optimal_tcs=nothing) #Array{Union{Float64,Array{Float64}}} # WP: without Penalty #OPFon: 0=>SCOPF, 1=>OPF #Winit: 0=>No initial value, 1=>Initial value #t0: first time period # fixed_SOC_: 0=>No fixed SOC, 1=>Fixed SOC # conprob: contingency probability summation # Proffin: Profile information
     # casreps=nothing
     #conprob=conprob_;LinMethod=LinMethod;Lininit=OP_init
     #Winit=0;t0=1;WP=1;
@@ -30,6 +30,7 @@ function L_MPSCOPF(Glob,glob_input,Proffin,casreps,h_cas=DataFrame(); fixed_SOC_
     # ------------------- Cascade Model -----------------------------
     if (OPFon==0 && raw["nConL"]!=0 && (!isnothing(casreps) || !isempty(h_cas)) && LinMethod == "SENS")
         LSCOPF, CascadeInfo=Cascade_L_PB(LSCOPF,nTP,raw,casreps,h_cas,Lininit,Glob);
+        CascadeInfo["optimal_tcs"]=optimal_tcs
         # CascadeInfo=Dict()
         # LSCOPF[:CascadeInfo]=CascadeInfo
 

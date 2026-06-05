@@ -49,7 +49,8 @@ elseif Test_Sys=="Nordic60/"
     Q_eff=2; P_eff=4;
     Q_con_percent=0.7; P_con_percent=0.2;
     Q_con_percent_coupled=0.3; P_con_percent_coupled=0.2;
-    Pen_S=0.01 *24/nTL; Pen_W=0.1 *24/nTL # Penalty factors in the objective function
+    Pen_S=0.01 *24/nTL; Pen_W=0.1 *24/nTL
+    OP_init0=Init_OP[Linearization_INIT[Glob["Runcode"][1]]]# Penalty factors in the objective function
     # SysData["Bus"][14,5:6].=[1.1,0.9]
     genprox=10
 elseif Test_Sys=="Florin5/"
