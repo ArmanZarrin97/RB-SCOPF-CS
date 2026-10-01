@@ -373,6 +373,7 @@ function assessV4(B, L, T, G, Ld, Shu, REN, BAT, y_bus_i, ctd, Gcas)
     Bs = []
     sij_i = []
     vio_i = []
+    vior_i = []
     Jcb = []
     percentIij=[]
     Iij=[]
@@ -382,7 +383,7 @@ function assessV4(B, L, T, G, Ld, Shu, REN, BAT, y_bus_i, ctd, Gcas)
     while true 
         if cg_s == 0
             Ld = load_order2(Ld, order)
-            (vmag_i, vang_i, delta_mismatch_inj, mmm_i, p_i, q_i, p_V, q_V, cg_t, pim_i, df_i, fm_i, sm_i, Gs, Bs, itr_i, sij_i, vio_i, Iij, percentIij, is_slack, Jcb) = multislack_acpf_order_pmaxqmax3(y_bus_i, B, L, G, Ld, Shu, REN, BAT, order, ctd)
+            (vmag_i, vang_i, delta_mismatch_inj, mmm_i, p_i, q_i, p_V, q_V, cg_t, pim_i, df_i, fm_i, sm_i, Gs, Bs, itr_i, sij_i, vio_i, vior_i, Iij, percentIij, is_slack, Jcb) = multislack_acpf_order_pmaxqmax3(y_bus_i, B, L, G, Ld, Shu, REN, BAT, order, ctd)
             # Shu[7:12,:]
             if cg_t == 0
                 if order == order_max
@@ -409,7 +410,7 @@ function assessV4(B, L, T, G, Ld, Shu, REN, BAT, y_bus_i, ctd, Gcas)
                         df_i = fr2(G, Ld, BAT, REN)
                         (G, Ld) = updateG2(G, Ld, df_i)
                         Ld = load_order2(Ld, order)
-                        (vmag_i, vang_i, delta_mismatch_inj, mmm_i, p_i, q_i, p_V, q_V, cg_t, pim_i, df_i, fm_i, sm_i, Gs, Bs, itr_i, sij_i, vio_i, Iij, percentIij, is_slack, Jcb) = multislack_acpf_order_pmaxqmax3(y_bus_i, B, L, G, Ld, Shu, REN, BAT, order, ctd)
+                        (vmag_i, vang_i, delta_mismatch_inj, mmm_i, p_i, q_i, p_V, q_V, cg_t, pim_i, df_i, fm_i, sm_i, Gs, Bs, itr_i, sij_i, vio_i, vior_i, Iij, percentIij, is_slack, Jcb) = multislack_acpf_order_pmaxqmax3(y_bus_i, B, L, G, Ld, Shu, REN, BAT, order, ctd)
                         if cg_t == 1
                             if Gcas.print
                                 println(" GPFz has been converged, after $i single-load-shedding in short-term ")
@@ -419,7 +420,7 @@ function assessV4(B, L, T, G, Ld, Shu, REN, BAT, y_bus_i, ctd, Gcas)
                             #~~~~~~~~
                             break
                         end
-                    end
+                  Gcas  end
                 end #~~~
             else
                 if Gcas.print
@@ -472,7 +473,7 @@ function assessV4(B, L, T, G, Ld, Shu, REN, BAT, y_bus_i, ctd, Gcas)
 
             order_s = 0
             Ld = load_order2(Ld, order_s)
-            (vmag_i, vang_i, delta_mismatch_inj, mmm_i, p_i, q_i, p_V, q_V, cg_s, pim_i, df_i, fm_i, sm_i, Gs, Bs, itr_i, sij_i, vio_i, Iij, percentIij, is_slack, Jcb) = multislack_acpf_order_pmaxqmax3(y_bus_i, B, L, G, Ld, Shu, REN, BAT, order, ctd)
+            (vmag_i, vang_i, delta_mismatch_inj, mmm_i, p_i, q_i, p_V, q_V, cg_s, pim_i, df_i, fm_i, sm_i, Gs, Bs, itr_i, sij_i, vio_i, vior_i, Iij, percentIij, is_slack, Jcb) = multislack_acpf_order_pmaxqmax3(y_bus_i, B, L, G, Ld, Shu, REN, BAT, order, ctd)
             if cg_s == 0
                 if order - order_step > order_min
                     order = order - order_step
@@ -504,7 +505,7 @@ function assessV4(B, L, T, G, Ld, Shu, REN, BAT, y_bus_i, ctd, Gcas)
                         (G, Ld) = updateG2(G, Ld, df_i)
                         order_s = 0
                         Ld = load_order2(Ld, order_s)
-                        (vmag_i, vang_i, delta_mismatch_inj, mmm_i, p_i, q_i, p_V, q_V, cg_s, pim_i, df_i, fm_i, sm_i, Gs, Bs, itr_i, sij_i, vio_i, Iij, percentIij, is_slack, Jcb) = multislack_acpf_order_pmaxqmax3(y_bus_i, B, L, G, Ld, Shu, REN, BAT, order, ctd)
+                        (vmag_i, vang_i, delta_mismatch_inj, mmm_i, p_i, q_i, p_V, q_V, cg_s, pim_i, df_i, fm_i, sm_i, Gs, Bs, itr_i, sij_i, vio_i, vior_i, Iij, percentIij, is_slack, Jcb) = multislack_acpf_order_pmaxqmax3(y_bus_i, B, L, G, Ld, Shu, REN, BAT, order, ctd)
                         if cg_s == 0
                             if Gcas.print
                                 println(" GPFp has been converged, after $i single-load-shedding in the last short-term ")
@@ -562,7 +563,7 @@ function assessV4(B, L, T, G, Ld, Shu, REN, BAT, y_bus_i, ctd, Gcas)
     if Gcas.print
         println(" after uvls,   the frequency is :       $df_i pu")
     end
-    return B, L, T, G, Ld, Shu, REN, BAT, vmag_i, vang_i, delta_mismatch_inj, mmm_i, p_i, q_i, p_V, q_V, cg_s, pim_i, df_i, fm_i, sm_i, Gs, Bs, itr_i, sij_i, vio_i, Iij, percentIij, Jcb,Gcas
+    return B, L, T, G, Ld, Shu, REN, BAT, vmag_i, vang_i, delta_mismatch_inj, mmm_i, p_i, q_i, p_V, q_V, cg_s, pim_i, df_i, fm_i, sm_i, Gs, Bs, itr_i, sij_i, vio_i, vior_i, Iij, percentIij, Jcb,Gcas
 end
 
 
@@ -1343,7 +1344,7 @@ function ofgt2(G, Ld, REN, BAT, df_i, Gcas)
 
         if df_i < -(df_min + df_eps)
             println("ufls2 is also done in ofgt2")
-            (G, Ld, df_i, blkout) = ufls2(G, Ld, df_i, Gcas)
+            (G, Ld, BAT, REN, df_i, blkout, Gcas) = ufls2(G, Ld, BAT, REN, df_i, Gcas)
             break
         end
 
@@ -4373,8 +4374,9 @@ function line_flow2(L, y_bus, V, del;cutlimit=1.0)
     percentIij = Iij./Imax
     # violated_lines = findall3(x -> x >= 1, sij)
     violated_lines = findall3(x -> x >= cutlimit, percentIij)
+    atrisk_lines = findall3(x -> x >= 0.95*cutlimit && x < cutlimit, percentIij)
     # ploss = sum(ploss_ij) + sum(ploss_ij_T)
-    return sij, violated_lines, Iij, percentIij
+    return sij, violated_lines, atrisk_lines, Iij, percentIij
 end
 
 

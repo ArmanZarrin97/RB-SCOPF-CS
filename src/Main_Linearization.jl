@@ -24,7 +24,7 @@ include("Funcs/Cascading/Cascading_tool.jl")
 
 Problem_Type="SCOPF";Ptype_="DA";
 #---------------------Reading Input files
-Test_Sys="39bus/";nTL=24;TS=1; Report="feasiblity"# temporary values
+Test_Sys="Nordic60/";nTL=24;TS=1; Report="feasiblity"# temporary values
 ERORR=Dict(); ERORR["DA"]=[0.00 0.00];ERORR["RT"]=[0.00 0.00];new_profile=[true true];printlevel=[1 0]; #[terminal print, ods print];
 Glob=Set_global_parameters1(Test_Sys)
 
@@ -45,14 +45,16 @@ elseif Test_Sys=="39bus/"
     Pen_S=0.0001 *24/nTL; Pen_W=0.1 *24/nTL # Penalty factors in the objective function
     genprox=10
     Glob["I_relax"]=1.03
+    Glob["I_relaxmax"]=1.1
 elseif Test_Sys=="Nordic60/"
     Q_eff=2; P_eff=4;
     Q_con_percent=0.7; P_con_percent=0.2;
     Q_con_percent_coupled=0.3; P_con_percent_coupled=0.2;
     Pen_S=0.01 *24/nTL; Pen_W=0.1 *24/nTL
-    OP_init0=Init_OP[Linearization_INIT[Glob["Runcode"][1]]]# Penalty factors in the objective function
+    # OP_init0=Init_OP[Linearization_INIT[Glob["Runcode"][1]]]# Penalty factors in the objective function
     # SysData["Bus"][14,5:6].=[1.1,0.9]
     genprox=10
+
 elseif Test_Sys=="Florin5/"
     Q_eff=2; P_eff=4;
     Q_con_percent=1; P_con_percent=0.5;
@@ -62,6 +64,7 @@ end
 relaxpermit=true
 Glob["relaxpermit"]=true
 Glob["monte_carlo"]=false
+include("Assets/Risk.jl")
 
 # DA_out,DA_model,init_out,init_model=Initial_Set_points()
 # SLP_Report_Prepare(init_model,init_out)
@@ -82,13 +85,14 @@ insertcols!(SLP_Rep, :Max_C_redis, :Max_C_redisQ => ["-"], after=true)
 #     V_c_Line_1,θ_c_Line_1,PG_c_Line_1,QG_c_Line_1=sqrt.(value.(init_model[:e_c_Line].^2 +init_model[:f_c_Line].^2)),atan.(value.(<init_model[:f_c_Line]),value.(init_model[:e_c_Line])),value.(init_model[:PG_c_Line]),value.(init_model[:QG_c_Line])
 # end
 Snapshots=Dict()
-Runcode=(6,3)
+Runcode=(3,3)
 # @load "NL_Solution.jld2"
 
 OP_NLP=Init_OP["Exact"]
 # ``for Runcode in [ (6,3) (3,3) (4,3) (5,3) ] # (4,3) (5,3) (2,1) (2,3) (1,1) (2,1) (3,1) (4,1) (5,1) (6,1) (7,1) $#(2,3) (3,3) (4,3) (1,1) (1,3) (5,1) (5,3) (2,1) (3,1) (4,1) (5,1)
-for Runcode in [  (3,3) (6,3) (4,3) (5,3) (6,5) (5,5) (4,5) (3,5)] #(3,1) (4,1) (5,1) (6,1) (4,3) (5,3) (2,1) (2,3) (1,1) (2,1) (3,1) (4,1) (5,1) (6,1) (7,1) $#(2,3) (3,3) (4,3) (1,1) (1,3) (5,1) (5,3) (2,1) (3,1) (4,1) (5,1)
-#(6,5) (5,5) (4,5) (3,5)
+# for Runcode in [ (3,1) (4,1) (5,1) (6,1) (3,3) (6,3) (4,3) (5,3)  (6,5) (5,5) (4,5) (3,5) ] #(3,1) (4,1) (5,1) (6,1) (4,3) (5,3) (2,1) (2,3) (1,1) (2,1) (3,1) (4,1) (5,1) (6,1) (7,1) $#(2,3) (3,3) (4,3) (1,1) (1,3) (5,1) (5,3) (2,1) (3,1) (4,1) (5,1) 
+for Runcode in [(3,3) (6,3) (4,3) (5,3)] #(3,1) (4,1) (5,1) (6,1) (4,3) (5,3) (2,1) (2,3) (1,1) (2,1) (3,1) (4,1) (5,1) (6,1) (7,1) $#(2,3) (3,3) (4,3) (1,1) (1,3) (5,1) (5,3) (2,1) (3,1) (4,1) (5,1) 
+    #(6,5) (5,5) (4,5) (3,5)
 
     Glob["Runcode"]=Runcode
     OP_init0=Init_OP[Linearization_INIT[Glob["Runcode"][1]]]
@@ -110,9 +114,13 @@ for Runcode in [  (3,3) (6,3) (4,3) (5,3) (6,5) (5,5) (4,5) (3,5)] #(3,1) (4,1) 
         end
     end
 
-    mincost,Best_solution,iter,min_infmax_N,min_infmax_C,minOptGap,Best_vio_general_N,Best_vio_sum_N,Best_vio_general_C,Best_vio_sum_C,sol_time,restoration_time,Best_Cas_MW, Best_Cas_MW_mean,Cascade_snapshots= SLA_clean(Glob,OP_init0,OP_NLP;BItermax=7)
+    # mincost,Best_solution,iter,min_infmax_N,min_infmax_C,minOptGap,Best_vio_general_N,Best_vio_sum_N,Best_vio_general_C,Best_vio_sum_C,sol_time,restoration_time,Best_Cas_MW, Best_Cas_MW_mean,Cascade_snapshots= SLA_clean(Glob,OP_init0,OP_NLP;BItermax=7)
+    mincost,Best_solution,iter,min_infmax_N,min_infmax_C,minOptGap,Best_vio_general_N,Best_vio_sum_N,Best_vio_general_C,Best_vio_sum_C,sol_time,restoration_time,Best_Cas_MW, Best_Cas_MW_mean,Cascade_snapshots= SLA_RCAS(Glob,OP_init0,OP_NLP;BItermax=7)
+
     Snapshots[Runcode]=Cascade_snapshots
-    makecasfig(Runcode,Cascade_snapshots,Glob["Path"])
+    if Test_Sys in ["39bus/", "Nordic60/"]
+        makecasfig(Runcode,Cascade_snapshots,Glob["Path"])
+    end
     Max_N_redis,Max_C_redis,Max_N_redisQ,Max_C_redisQ=find_total_redispatch!(Glob, Best_solution,OP_init0)
 
     SLP_Rep=Add_SLP_report!(SLP_Rep,Runcode,Best_solution,mincost,minOptGap,min_infmax_N,min_infmax_C,Best_vio_general_N,Best_vio_general_C,iter,sol_time,restoration_time,Max_N_redis,Max_C_redis,Max_N_redisQ,Max_C_redisQ)

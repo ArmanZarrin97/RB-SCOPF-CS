@@ -30,7 +30,7 @@ function Initialize_Model(LinMethod)
         set_attribute(model,"CPXPARAM_Barrier_QCPConvergeTol",1.5e-5)
         # set_attribute(model,"CPXPARAM_Barrier_QCPConvergeTol",1e-5)
         set_attribute(model, "CPXPARAM_Simplex_Tolerances_Feasibility", 1.5e-5)
-        set_attribute(model, "CPXPARAM_MIP_Tolerances_MIPGap", 0.005)
+        set_attribute(model, "CPXPARAM_MIP_Tolerances_MIPGap", 0.001)
         set_attribute(model, "CPXPARAM_Simplex_Tolerances_Optimality", 1.5e-5)
         set_attribute(model, "CPXPARAM_MIP_Tolerances_Linearization", 1.5e-5)
         set_attribute(model, "CPXPARAM_Network_Tolerances_Optimality", 1.5e-5)
@@ -74,7 +74,7 @@ function Solve_P(SCOPF)
     return SCOPF
 end
 
-function Objective_function(TD, SCOPF,CascadeInfo,nTP,raw,initraw,Proffin,N_Var,C_Var,sl_F,sl_V,t0,Lininit,LinMethod="None",Lccost=1e4,Rccost=0;lambda=0.05,OPFon=0,WP=1)    
+function Objective_function(Glob, TD, SCOPF,CascadeInfo,nTP,raw,initraw,Proffin,N_Var,C_Var,sl_F,sl_V,t0,Lininit,LinMethod="None",Lccost=1e4,Rccost=0;lambda=0.05,OPFon=0,WP=1)    
 # SCOPF,nTP,raw,initraw,Proffin,N_Var,C_Var,sl_F,sl_V,t0=LSCOPF,nTP,raw,initraw,Proffin,N_Var,C_Var,sl_F,sl_V,t0
 singleconprob= (raw["nConL"]==0 ? 0 : 1/raw["nConL"])
 #####################################
@@ -94,6 +94,7 @@ PG,gar,P_ch,P_dis,P_inc,P_dec,gar,shed,curt,curtc,soc,UE,Vars =N_Var
 PG_c_Line,gar,P_ch_c_Line,P_dis_c_Line,P_inc_c_Line,P_dec_c_Line,shed_c_Line,curt_c_Line,curtc_c_Line =C_Var
 sl_F_cost,sl_V_cost=1e5,1e5
 Prob_c= zeros(raw["nConL"]).+singleconprob
+α_t= [1-t*0.01 for t in 1:nTP]
 #Preventive
 @expression(SCOPF,cost_ESS[t=1:nTP,i=1:raw["nESS"]], raw["ESS"]."cost_c"[i]+ raw["ESS"]."cost_b"[i]*raw["sbase"]*(P_dis[t,i]+P_ch[t,i])) #+raw["ESS"]."cost_a"[i]*raw["sbase"]^2*(P_dis[t,i]+P_ch[t,i])*(P_dis[t,i]+P_ch[t,i])
 @expression(SCOPF,cost_Gen[t=1:nTP,i=1:raw["nGen"]], raw["Gen"]."cost_c"[i]+ raw["Gen"]."cost_b"[i]*raw["sbase"]*(PG[t,i])) #+raw["Gen"]."cost_a"[i]*(raw["sbase"]*(PG[t,i]))^2
@@ -233,23 +234,58 @@ elseif LinMethod=="SENS"
         @expression(SCOPF,cost_TR_PenC, 0)
         @expression(SCOPF,cost_TR_relaxC, 0)
     end
-    if haskey(SCOPF.obj_dict,:bin_Cas) && !isempty(SCOPF[:bin_Cas])
-        cascade_penalty=sum(SCOPF[:bin_Cas].*CascadeInfo["LNS_Cascade"]).*coef6 #* 0.001
+    if Glob["Risk_cascade"]=="RSS"
+
+        # rcas_OP=(1 .-SCOPF[:bin_Cas]).*CascadeInfo["LNS_tc"]+ (1 .-SCOPF[:pbd]).*CascadeInfo["LNS_tc0"]+ SCOPF[:pbd].*CascadeInfo["LNS_tc"]
+        # rcas_OP=(1 .-SCOPF[:pbd]).*CascadeInfo["LNS_tc0"]+ SCOPF[:pbd].*CascadeInfo["LNS_tc"]
+        rcas_OP=(1 .-SCOPF[:pbd]).*CascadeInfo["Sev_tc0"]+ SCOPF[:pbd].*CascadeInfo["Sev_tc"]
+
+        @expression(SCOPF,rcas_OP, rcas_OP)
+        @expression(SCOPF,Rcas_sys, sum(α_t[t] * Prob_c[c]* rcas_OP[(t,c)] for (t,c) in CascadeInfo["tups"] )) #* 0.001
+        @constraint(SCOPF,rcas_OP_con, rcas_OP.<=Glob["R_OP_max"].* (1 .+ SCOPF[:slk_R_OP]))
+        @constraint(SCOPF,Rcas_sys_con, Rcas_sys<=Glob["R_Sys_max"]* (1 +SCOPF[:slk_R_Sys]))
+        @expression(SCOPF,cas_relaxC,0* (coef1) * sumJuMPi(SCOPF[:slk_R_OP]))
+
+        @variable(SCOPF,Worst_slk_cas1>=0)
+        @variable(SCOPF,Worst_slk_cas2>=0)
+        # @variable(SCOPF,Worst_slk_cas3>=0)
+        # @constraint(SCOPF,C_worst_slk_cas1,Worst_slk_cas1.>=SCOPF[:slk_R_OP])
+        # @constraint(SCOPF,C_worst_slk_cas2,Worst_slk_cas2>=SCOPF[:slk_R_Sys])
+        # @constraint(SCOPF,C_worst_slk_cas3,Worst_slk_cas3.>=SCOPF[:slk_R_Limit])
+
+        # @expression(SCOPF,Worst_slk_cas3, sum(SCOPF[:slk_R_Limit]))
+
+        @expression(SCOPF,cascade_penalty, 0) #* 0.001
+        @expression(SCOPF,Cascade_Risk_cost, 0*Rcas_sys*coef6)
+        # @expression(SCOPF,Cascade_Risk_cost, 0)
+
+        @expression(SCOPF,Worst_slk_Pen, 0* (Worst_slk_cas1+Worst_slk_cas2)*coef6 +cas_relaxC)
+
+    elseif haskey(SCOPF.obj_dict,:bin_Cas) && !isempty(SCOPF[:bin_Cas])
+        if Glob["Risk_cascade"]=="MS"
+            cascade_penalty=sum(SCOPF[:bin_Cas].*CascadeInfo["LNS_Cascade"]).*coef6 #* 0.001
+        elseif Glob["Risk_cascade"]=="SS"
+            # idx_f=findall(((t,c,s),) -> s==1, CascadeInfo["tcs_Cascade"][:,1])
+            cascade_penalty=sum((1 .-SCOPF[:bin_Cas]).*CascadeInfo["LNS_tc"]+ SCOPF[:bin_Cas].*CascadeInfo["LNS_tc0"]).*coef6 #* 0.001
+        end
         @expression(SCOPF,cascade_penalty, cascade_penalty)
         @expression(SCOPF,Worst_slk_Pen, 0)
+        @expression(SCOPF,Cascade_Risk_cost, 0)
     elseif haskey(SCOPF.obj_dict,:slk_cas) && !isempty(SCOPF[:slk_cas])
         cascade_penalty=sum(SCOPF[:slk_cas].*CascadeInfo["LNS_tc"]).*coef6
         @expression(SCOPF,cascade_penalty, cascade_penalty)
         @variable(SCOPF,Worst_slk_cas>=0)
         @constraint(SCOPF,C_worst_slk_cas,Worst_slk_cas.>=SCOPF[:slk_cas])
         @expression(SCOPF,Worst_slk_Pen, Worst_slk_cas*coef4*0.8)
+        @expression(SCOPF,Cascade_Risk_cost, 0)
     else
         @expression(SCOPF,Worst_slk_Pen,0)
         @expression(SCOPF,cascade_penalty, 0.0)
+        @expression(SCOPF,Cascade_Risk_cost, 0)
     end
-    @expression(SCOPF,real_objective_cas, real_objective + lambda*singleconprob*(cascade_penalty))
+    @expression(SCOPF,real_objective_cas, real_objective +Cascade_Risk_cost + lambda*singleconprob*(cascade_penalty+Worst_slk_Pen))
     # @objective(SCOPF, Min,  real_objective +cost_TR_relaxN+cost_TR_PenN+cost_TR_relaxC+ lambda*singleconprob*(cost_TR_PenC+cascade_penalty))
-    @objective(SCOPF, Min,  real_objective_cas +cost_TR_relaxN+cost_TR_PenN+cost_TR_relaxC +Worst_slk_Pen+ lambda*singleconprob*(cost_TR_PenC))
+    @objective(SCOPF, Min,  real_objective_cas +cost_TR_relaxN+cost_TR_PenN+cost_TR_relaxC + lambda*singleconprob*(cost_TR_PenC))
     #cascade_penalty
 
     # @objective(SCOPF, Min,  0)
@@ -790,10 +826,13 @@ function Contingency_L_PB( Glob, SCOPF::Model,nTP::Int64,raw::Dict{String, Any},
 end
 
 
-function Cascade_L_PB( SCOPF::Model,nTP::Int64,raw::Dict{String, Any},casreps::Matrix{DataFrame}, h_cas::DataFrame, Lininit::Dict{String, Any}, Glob::Dict{String,Any})
-    vio_init=Flow_ratio(raw, Lininit)   
+function Cascade_L_PB( SCOPF::Model,nTP::Int64,raw::Dict{String, Any},casreps::Matrix{DataFrame}, h_cas::DataFrame, comcas::Matrix{DataFrame}, Lininit::Dict{String, Any}, Glob::Dict{String,Any},optimal_tcs)
+    # SCOPF=LSCOPF
+    vio_init=Flow_ratio(raw, Lininit)
     I_relax=Glob["I_relax"]#+maximum(vio_init)-1
-    println("Maximum I allowed: ", I_relax)
+    I_relaxmax=Glob["I_relaxmax"]#+maximum(vio_init)-1
+    println("I allowed: ", I_relax)
+    println("Imax allowed: ", I_relaxmax)
     Risk_cascade=Glob["Risk_cascade"]
     # SCOPF=LSCOPF
     cas_tc = findall(x-> size(x,1)>1, casreps)
@@ -806,14 +845,15 @@ function Cascade_L_PB( SCOPF::Model,nTP::Int64,raw::Dict{String, Any},casreps::M
     all_idx = [(i, j, k) for (i, j, K) in result for k in 1:K]
     all_idx1= [(i, j, k) for (i, j, K) in result for k in 1:K-1]
     LNS_Cascade= [casreps[i,j][k,"LNS_T"] for (i,j,k) in all_idx]
-    LNS_tc= [casreps[i,j][end,"LNS_T"] for (i,j) in tups]   
+    LNS_tc= [casreps[i,j][end,"LNS_T"] for (i,j) in tups]
+    LNS_tc0= [casreps[i,j][1,"LNS_T"] for (i,j) in tups]
+    Sev_tc= [SEVF_casreps(casreps[i,j]) for (i,j) in tups]
+    Sev_tc0= [SEVF_casreps(casreps[i,j], stage=1) for (i,j) in tups]
 
     ϵ_vm=1e-3
     Imaxlimit0=(raw["Line"]."RATE_A") .^ 2
-    SENS_Cascade=zeros(Float64,0,raw["nPActBus"]+raw["nQActBus"])
-    Vm_Cascade=zeros(Float64,0,1)
-    line_Cascade=zeros(Int64,0,1)
-    tcs_Cascade=zeros(Int64,0,1)
+    SENS_Cascade=zeros(Float64,0,raw["nPActBus"]+raw["nQActBus"]);Vm_Cascade=zeros(Float64,0,1);line_Cascade=zeros(Int64,0,1);tcs_Cascade=zeros(Int64,0,1)
+    SENS_Comcas=zeros(Float64,0,raw["nPActBus"]+raw["nQActBus"]);Vm_Comcas=zeros(Float64,0,1);line_Comcas=zeros(Int64,0,1);tcs_Comcas=zeros(Int64,0,1)
     # LNS_Cascade=zeros(Int64,0,1)
 
     for (i,(t,c,s)) in enumerate(all_idx1)
@@ -838,7 +878,7 @@ function Cascade_L_PB( SCOPF::Model,nTP::Int64,raw::Dict{String, Any},casreps::M
 
     ΔPinj=SCOPF[:ΔPinjP]-SCOPF[:ΔPinjN]
     ΔQinj=SCOPF[:ΔQinjP] -SCOPF[:ΔQinjN]
-    diffVm= (Vm_Cascade.^2) .- ((I_relax-(ϵ_vm*1)).^2) 
+    diffVm= (Vm_Cascade.^2) .- ((I_relax-(ϵ_vm*1)).^2)
     # println(keys(Lininit))
 
     @expression(SCOPF, Vm_Cascade_expr[k=1:length(line_Cascade)], Vm_Cascade[k])
@@ -846,7 +886,7 @@ function Cascade_L_PB( SCOPF::Model,nTP::Int64,raw::Dict{String, Any},casreps::M
     @expression(SCOPF, diffOpt_expr[k=1:length(line_Cascade)], (SENS_Cascade[k,:])'*[ΔPinj ΔQinj][tcs_Cascade[k][1],:])
     # casreps[12,33]
 
-    if Risk_cascade
+    if Risk_cascade=="MS"
         @variable(SCOPF, bin_Cas[(t,c,s) in all_idx], Bin)
         @threads for (t, c, s) in all_idx
             hint = s==1 ? 1.0 : 0.0
@@ -854,6 +894,19 @@ function Cascade_L_PB( SCOPF::Model,nTP::Int64,raw::Dict{String, Any},casreps::M
         end
         @constraint(SCOPF,CNcas_bin[(t,c) in tups], sum(bin_Cas[(t,c,key.I[1][3])] for key in keys(bin_Cas) if key.I[1][1] == t && key.I[1][2] == c) >= 1)
         @constraint(SCOPF, CNcascade_LP1[k=1:length(line_Cascade)], (SENS_Cascade[k,:])'*[ΔPinj ΔQinj][tcs_Cascade[k][1],:] <= (-diffVm[k])*Imaxlimit0[line_Cascade[k]]+ 2000*Imaxlimit0[line_Cascade[k]]*(1-bin_Cas[tcs_Cascade[k]]) )
+    elseif Risk_cascade=="SS"
+        @variable(SCOPF, bin_Cas[(t,c) in tups] >= 0,start=1,Bin)
+        idx_f=findall(((t,c,s),) -> s==1, tcs_Cascade[:,1])
+        @constraint(SCOPF, CNcascade_LP1[k=1:length(idx_f)], (SENS_Cascade[idx_f[k],:])'*[ΔPinj ΔQinj][tcs_Cascade[idx_f[k]][1],:] <= (-diffVm[idx_f[k]])*Imaxlimit0[line_Cascade[idx_f[k]]] + 2000*Imaxlimit0[line_Cascade[idx_f[k]]]*(1-bin_Cas[(tcs_Cascade[idx_f[k]][1],tcs_Cascade[idx_f[k]][2])]))
+    elseif Risk_cascade=="RSS"
+        # @variable(SCOPF, bin_Cas[(t,c) in tups] >= 0,start=1,Bin)
+        @variable(SCOPF, 0<=pbd[(t,c) in tups]<=10,start=0.0)
+        @variable(SCOPF, 0<=slk_R_OP[(t,c) in tups],start=0.0)
+        @variable(SCOPF, 0<=slk_R_Sys,start=0.0)
+        @variable(SCOPF, 0<=slk_R_Limit[(t,c) in tups],start=0.0)
+        idx_f=findall(((t,c,s),) -> s==1, tcs_Cascade[:,1])
+        @constraint(SCOPF, CNcascade_LP1[k=1:length(idx_f)], (SENS_Cascade[idx_f[k],:])'*[ΔPinj ΔQinj][tcs_Cascade[idx_f[k]][1],:] <= (-diffVm[idx_f[k]])*Imaxlimit0[line_Cascade[idx_f[k]]]+ pbd[(tcs_Cascade[idx_f[k]][1],tcs_Cascade[idx_f[k]][2])]*Imaxlimit0[line_Cascade[idx_f[k]]]* (I_relaxmax-I_relax))#+ slk_R_Limit[(tcs_Cascade[idx_f[k]][1],tcs_Cascade[idx_f[k]][2])]* Imaxlimit0[line_Cascade[idx_f[k]]] ) #+ 2000*Imaxlimit0[line_Cascade[idx_f[k]]]*(1-bin_Cas[(tcs_Cascade[idx_f[k]][1],tcs_Cascade[idx_f[k]][2])]))
+        @constraint(SCOPF, CNcascade_LP3[k=1:length(idx_f)], (SENS_Cascade[idx_f[k],:])'*[ΔPinj ΔQinj][tcs_Cascade[idx_f[k]][1],:] <= 0 )
     else
         # @constraint(SCOPF,CNcas_bin[(t,c) in tups], bin_Cas[(t,c,1)] == 1)
         @variable(SCOPF, slk_cas[(t,c) in tups] >= 0)
@@ -867,7 +920,7 @@ function Cascade_L_PB( SCOPF::Model,nTP::Int64,raw::Dict{String, Any},casreps::M
         # end
     end
     # fix.(slk_cas, 1; force=true)
-    CascadeInfo=Dict("I_relax"=>I_relax,"Vm_Cascade"=> Vm_Cascade,"diffVm"=>diffVm,"tcs_Cascade"=>tcs_Cascade, "SENS_Cascade"=>SENS_Cascade, "line_Cascade"=>line_Cascade, "LNS_Cascade"=>LNS_Cascade, "LNS_tc"=>LNS_tc)
+    CascadeInfo=Dict("I_relax"=>I_relax,"Vm_Cascade"=> Vm_Cascade,"diffVm"=>diffVm,"tcs_Cascade"=>tcs_Cascade, "SENS_Cascade"=>SENS_Cascade, "line_Cascade"=>line_Cascade, "LNS_Cascade"=>LNS_Cascade, "LNS_tc"=>LNS_tc, "LNS_tc0"=>LNS_tc0, "Sev_tc"=>Sev_tc, "Sev_tc0"=>Sev_tc0, "tups"=>tups, "optimal_tcs"=>optimal_tcs)
     SCOPF[:CascadeInfo]=CascadeInfo
 
     if !isempty(h_cas)
@@ -885,6 +938,35 @@ function Cascade_L_PB( SCOPF::Model,nTP::Int64,raw::Dict{String, Any},casreps::M
         # h_cas.Vio[idx_hist].^2
         @constraint(SCOPF, CNcascade_hist[k=1:length(tup_cas)], (SENS_hist[k,:])'*[ΔPinj ΔQinj][tup_cas[k][1],:] <= (-diffVm_hist[k])*Imaxlimit0[tup_cas[k][2]])
         @expression(SCOPF, hist_I[k=1:length(tup_cas)], (SENS_hist[k,:])'*[ΔPinj ΔQinj][tup_cas[k][1],:])
+    end
+
+    # firstind=findall(x->x in CascadeInfo["optimal_tcs"],CascadeInfo["tcs_Cascade"])
+    # Dict(CascadeInfo["optimal_tcs"])
+    # opt_tcs_com=Dict((x, y) => z for (x, y, z) in optimal_tcs)
+    opt_tcs_com = optimal_tcs === nothing ? Dict() : Dict((x, y) => z for (x, y, z) in optimal_tcs)
+    pbd_cas=0.00
+    if !isempty(comcas)
+        for  t in 1:size(comcas,1), c in 1:size(comcas,2)
+            cs0=comcas[t,c]
+            for s = 1: min(size(cs0,1),get(opt_tcs_com, (t,c), 1))
+                if !isempty(cs0[s,"LL"])
+                    reprow=cs0[s,:]
+                    lineind=cs0[s,"LL"]
+                    VM=cs0[s,"VM"]
+                    Jcbs=cs0[s,"Jcbs"]
+                    Sens_temp=Cal_SENS_Cascade(Jcbs,lineind,t,raw,Lininit,reprow)
+                    tcs_Comcas=vcat(tcs_Comcas,repeat([(t,c,s)],length(lineind)))
+                    Vm_Comcas=vcat(Vm_Comcas,VM)
+                    line_Comcas=vcat(line_Comcas,lineind)
+                    SENS_Comcas=vcat(SENS_Comcas,Sens_temp)
+                end
+            end
+        end
+        diffVm_Comcas= (Vm_Comcas.^2) .- ((I_relax-(ϵ_vm*1)).^2)
+        @expression(SCOPF, Vm_Comcas_expr[k=1:length(line_Comcas)], Vm_Comcas[k])
+        @constraint(SCOPF, CNComcas_LP1[k=1:length(line_Comcas)], (SENS_Comcas[k,:])'*[ΔPinj ΔQinj][tcs_Comcas[k][1],:] <= (-diffVm_Comcas[k])*Imaxlimit0[line_Comcas[k]]+ pbd_cas*Imaxlimit0[line_Comcas[k]]* (I_relaxmax-I_relax)) #+ 2000*Imaxlimit0[line_Comcas[idx_f[k]]]*(1-bin_Cas[(tcs_Comcas[idx_f[k]][1],tcs_Comcas[idx_f[k]][2])]))
+        # @expression(SCOPF, conrem[k=1:length(line_Comcas)], (((I_relax-(ϵ_vm*1))^2)-Vm_Comcas[line_Comcas[k]].^2)*Imaxlimit0[line_Comcas[k]]-(SENS_Comcas[k,:])'*[ΔPinj ΔQinj][tcs_Comcas[k][1],:])
+        # @expression(SCOPF, consens[k=1:length(line_Comcas)], (SENS_Comcas[k,:])'*[ΔPinj ΔQinj][tcs_Comcas[k][1],:])
     end
     return SCOPF,CascadeInfo
 end

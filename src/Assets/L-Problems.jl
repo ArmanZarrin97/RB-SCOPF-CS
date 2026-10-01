@@ -57,7 +57,7 @@ function DA_OPF(LinMethod="None",OP_init=Dict{String,Any}(),init__="Zero") #Arra
     return OPFout,SCOPF
 end
 
-function DA_SCOPF(Glob, casreps=nothing,h_cas=DataFrame();LinMethod="None",OP_init=Dict{String,Any}(),init__="Zero",relaxconfac=0.0,optimal_tcs=nothing) #Array{Union{Float64,Array{Float64}}}
+function DA_SCOPF(Glob, casreps=nothing,h_cas=DataFrame(),comcas=DataFrame();LinMethod="None",OP_init=Dict{String,Any}(),init__="Zero",relaxconfac=0.0,optimal_tcs=nothing) #Array{Union{Float64,Array{Float64}}}
 
     #init__="Zero";LinMethod="None";OP_init=Dict{String,Array{Union{Float64,Array{Float64}}}}()
     Ptype_="DA";init_=init__;
@@ -102,7 +102,7 @@ function DA_SCOPF(Glob, casreps=nothing,h_cas=DataFrame();LinMethod="None",OP_in
 
     Proffin=Load_Data(nTP,raw,profraw,ctdall) # Prepare Load and Shunt data and generation setpoints
     SCOPF,N_Var,C_Var=try
-        L_MPSCOPF(Glob,glob_input,Proffin,casreps,h_cas;conprob=Glob["conprob_"],LinMethod=LinMethod,Lininit=OP_init,relaxconfac=relaxconfac,optimal_tcs=optimal_tcs);
+        L_MPSCOPF(Glob,glob_input,Proffin,casreps,h_cas,comcas;conprob=Glob["conprob_"],LinMethod=LinMethod,Lininit=OP_init,relaxconfac=relaxconfac,optimal_tcs=optimal_tcs);
         # conprob=Glob["conprob_"];LinMethod=LinMethod;Lininit=OP_init
     catch e
         @warn "Error in MPSCOPF function: $e"

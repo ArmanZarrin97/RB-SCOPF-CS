@@ -2384,7 +2384,7 @@ function Sensitivity_constraints(Glob, LSCOPF,CascadeInfo,N_Var,C_Var,OPFon,raw,
     Td=Glob["Td"]
     CCT=Glob["CCT"]
     nTP=Glob["nTL"]
-    
+
     SENSDict_All=Dict()
     Parlist_N=N_Var[14];Vars_N=N_Var[13]
     Parlist_C=C_Var[11];Vars_C=C_Var[10]
@@ -2396,7 +2396,10 @@ function Sensitivity_constraints(Glob, LSCOPF,CascadeInfo,N_Var,C_Var,OPFon,raw,
         PBound=[cat(MaxPup_N[:,raw["PActBus"],:],MaxPup_C[:,raw["PActBus"],:];dims=3),cat(MinPup_N[:,raw["PActBus"],:],MinPup_C[:,raw["PActBus"],:];dims=3)]
         QBound=[cat(MaxQup_N[:,raw["QActBus"],:],MaxQup_C[:,raw["QActBus"],:];dims=3),cat(MinQup_N[:,raw["QActBus"],:],MinQup_C[:,raw["QActBus"],:];dims=3)]
         SENSDict_N=Cal_SENS_new2(Lininit,ctdall,nTP,raw;C="N");
+        # SENSDict_N1=Cal_SENS_new_opt2(Lininit,ctdall,nTP,raw;C="N");
+
         SENSDict_C=Cal_SENS_new2(Lininit,ctdall,nTP,raw;C="CL");
+        # SENSDict_C=Cal_SENS_new_opt2(Lininit,ctdall,nTP,raw;C="CL");
         # SENSDict_N_0==SENSDict_N
         # SENSDict_C_0==SENSDict_C
         for key in keys(SENSDict_N)
@@ -2409,6 +2412,7 @@ function Sensitivity_constraints(Glob, LSCOPF,CascadeInfo,N_Var,C_Var,OPFon,raw,
         PBound=[MaxPup_N[:,raw["PActBus"],:],MinPup_N[:,raw["PActBus"],:]]
         QBound=[MaxQup_N[:,raw["QActBus"],:],MinQup_N[:,raw["QActBus"],:]]
         SENSDict_All=Cal_SENS_new2(Lininit,ctdall,nTP,raw;C="N");
+        # SENSDict_All=Cal_SENS_new_opt2(Lininit,ctdall,nTP,raw;C="N");
         # JDict_All=Lininit["NJacob"]
         I2_0=Parlist_N[2];V_0=Parlist_N[3];θ_0=Parlist_N[4]
         cl=1
@@ -2464,7 +2468,7 @@ function Sensitivity_constraints(Glob, LSCOPF,CascadeInfo,N_Var,C_Var,OPFon,raw,
 
     # @time TR,Indices,acc,Injlimit,Worst_Vio=Set_TR_new(Base_TR_N,Base_TR_C,Lininit,SENSDict_All,I2_0,V_0,raw,PBound,QBound,;cl=cl)
     # @time TR,Indices,acc,Injlimit,Worst_Vio=Set_TR_new2(Base_TR_N,Base_TR_C,SENSDict_All,I2_0,V_0,raw,PBound,QBound,;cl=cl)
-    TR,Indices,acc,Injlimit,Worst_Vio=Set_TR_new2(nTP,Base_TR_N,Base_TR_C,SENSDict_All,I2_0,V_0,raw,PBound,QBound,CascadeInfo;cl=cl)
+    TR,Indices,acc,Injlimit,Worst_Vio=Set_TR_new2(Glob, nTP,Base_TR_N,Base_TR_C,SENSDict_All,I2_0,V_0,raw,PBound,QBound,CascadeInfo;cl=cl)
 
 
 

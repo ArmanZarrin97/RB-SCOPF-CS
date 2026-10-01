@@ -224,6 +224,7 @@ function Set_global_parameters1(Test_Sys)
     loadbusinjection="false"
     # I_relax=1.037
     I_relax=1.4
+    I_relaxmax=1.5
     Glob=Dict(
         "Path"=>Path,
         "SysData"=>SysData,
@@ -243,9 +244,12 @@ function Set_global_parameters1(Test_Sys)
         "Dec_coef"=>Dec_coef,
         "LSpermit"=>LSpermit,
         "I_relax"=>I_relax,
+        "I_relaxmax"=>I_relaxmax,
         "Adaptive_TR"=>Adaptive_TR,
         "Adaptive_TRB"=>Adaptive_TRB,
         "filter_factor"=>filter_factor,
+        "R_OP_max"=>5,
+        "R_Sys_max"=>0.5,
     )
     return Glob
 end
@@ -804,7 +808,7 @@ function find_variable_in_model_constraints(model,variable)
     end
 end
 
-function Make_Iter_report(OP_NLP,LNS_cas0)
+function Make_Iter_report(OP_NLP,LNS_cas0,Rcas_0)
     # V_1,θ_1,PG_1,QG_1,cost1=Matrix(out."mag_v"[1]),Matrix(out."ang_v"[1]),Matrix(out."PG"[1]),Matrix(out."QG"[1]),out."OFValue_WP"[1]
     V_1,θ_1,PG_1,QG_1,cost1=OP_NLP["V"],OP_NLP["θ"],OP_NLP["PG"],OP_NLP["QG"],OP_NLP["obj_WP"]
     if Problem_Type=="SCOPF"
@@ -816,10 +820,10 @@ function Make_Iter_report(OP_NLP,LNS_cas0)
         Iter_Rep=DataFrame(repeat([[]],length(Head)), Head)
         newrow=["-" "Non-Linear" 0 OP_NLP["time"] "-" "-" "-" "-" "-" cost1 cost1 "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-"]
     elseif Report=="feasiblity"
-        Head=["Initialization";"Method";"Runcode";"Time";"Res_Time";"Iter";"TR";"LNS_cas";"OptGap";"acc";"Max_Inf_N";"Max_Inf_C";"Mean_Inf_N";"Mean_Inf_C";"Num_Inf_N";"Num_Inf_C";"Optimizer_Obj";"real_Obj";"Smax_Abs";"Vmin_Abs";"Vmax_Abs";"Ramp_Abs";"Smax_C_Abs";"Vmin_C_Abs";"Vmax_C_Abs";"Ramp_C_Abs";"Smax_N";"Vmin_N";"Vmax_N";"Ramp_N";"Smax_C";"Vmin_C";"Vmax_C";"Ramp_C";"Smax_N_M";"Vmin_N_M";"Vmax_N_M";"Ramp_N_M";"Smax_C_M";"Vmin_C_M";"Vmax_C_M";"Ramp_C_M";"Smax_N_N";"Vmin_N_N";"Vmax_N_N";"Ramp_N_N";"Smax_C_N";"Vmin_C_N";"Vmax_C_N";"Ramp_C_N";"Num_C_I"; "Num_C_V";"Num_S_I"; "Num_S_V"]
+        Head=["Initialization";"Method";"Runcode";"Time";"Res_Time";"Iter";"TR";"LNS_cas";"Rcas";"OptGap";"acc";"Max_Inf_N";"Max_Inf_C";"Mean_Inf_N";"Mean_Inf_C";"Num_Inf_N";"Num_Inf_C";"Optimizer_Obj";"real_Obj";"Smax_Abs";"Vmin_Abs";"Vmax_Abs";"Ramp_Abs";"Smax_C_Abs";"Vmin_C_Abs";"Vmax_C_Abs";"Ramp_C_Abs";"Smax_N";"Vmin_N";"Vmax_N";"Ramp_N";"Smax_C";"Vmin_C";"Vmax_C";"Ramp_C";"Smax_N_M";"Vmin_N_M";"Vmax_N_M";"Ramp_N_M";"Smax_C_M";"Vmin_C_M";"Vmax_C_M";"Ramp_C_M";"Smax_N_N";"Vmin_N_N";"Vmax_N_N";"Ramp_N_N";"Smax_C_N";"Vmin_C_N";"Vmax_C_N";"Ramp_C_N";"Num_C_I"; "Num_C_V";"Num_S_I"; "Num_S_V"]
         Iter_Rep=DataFrame(repeat([[]],length(Head)), Head)
          #------------------- Print Optimal point and first iteration
-         newrow=["-" "Non-Linear" 0 OP_NLP["time"] "-" "-" "-" LNS_cas0 0 "-" 0 0 0 0 0 0 cost1 "-"  "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-"]
+         newrow=["-" "Non-Linear" 0 OP_NLP["time"] "-" "-" "-" LNS_cas0 Rcas_0[3] 0 "-" 0 0 0 0 0 0 cost1 "-"  "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-" "-"]
     elseif Report=="full"
         Head=["Initialization";"Method";"Runcode";"Time";"Res_Time";"Iter";"TR";"FI";"OptGap";"Max_Inf_N";"Max_Inf_C";"Optimizer_Obj";"real_Obj";["PG$i" for i in 1:size(SysData["Gen"],1)];["QG$i" for i in 1:size(SysData["Gen"],1)];["V$i" for i in 1:size(SysData["Bus"],1)];["θ$i" for i in 1:size(SysData["Bus"],1)]]
         Iter_Rep=DataFrame(repeat([[]],length(Head)), Head)
@@ -838,7 +842,7 @@ function Make_Iter_report(OP_NLP,LNS_cas0)
     return Iter_Rep
 end
 
-function Add_Iter_report!(Glob,Iter_Rep,OP,cost,OptGap,Vio_Sum_N,Vio_Sum_C,Vio_general_N,Vio_general_C,iter,LNS_cas,sol_time,res_time,Filter,R_P=0,R_Q=0;Convergence=true)
+function Add_Iter_report!(Glob,Iter_Rep,OP,cost,OptGap,Vio_Sum_N,Vio_Sum_C,Vio_general_N,Vio_general_C,iter,LNS_cas,Rcas,sol_time,res_time,Filter,R_P=0,R_Q=0;Convergence=true)
     # Glob,Iter_Rep,out,OP,cost,OptGap,Vio_Sum_N,Vio_Sum_C,Vio_general_N,Vio_general_C,iter,sol_time,res_time=Glob,Iter_Rep,init_out,Best_solution,mincost,minOptGap,Best_vio_sum_N,Best_vio_sum_C,Best_vio_general_N,Best_vio_general_C,iter,0,0
     Runcode= Glob["Runcode"]
     max_N= [0.0,0.0, 0.0, 0.0]
@@ -877,7 +881,7 @@ function Add_Iter_report!(Glob,Iter_Rep,OP,cost,OptGap,Vio_Sum_N,Vio_Sum_C,Vio_g
         # Head=["Initialization";"Method";"Time";"Res_Time";"Iter";"TR";"OptGap";"Optimizer_Obj";"real_Obj";"Max_I_N";"Max_I_C";"Max_Vmax_N";"Max_Vmax_C";"Max_Vmin_N";"Max_Vmin_C";"Max_Ramp_N";"Max_Ramp_C";"Smax_N_N";"Vmin_N_N";"Vmax_N_N";"Ramp_N_N";"Smax_C_N";"Vmin_C_N";"Vmax_C_N";"Ramp_C_N";]
         newrow=[Linearization_INIT[Runcode[1]] Linearization_TYPE[Runcode[2]]  sol_time res_time iter TR R_P_T R_Q_T OptGap OP["obj_WP"] round(cost,digits=5) 100*Abs_N[3] 100*Abs_C[3] Abs_N[1] Abs_C[1] Abs_N[2] Abs_C[2] Abs_N[4] Abs_C[4] Num_N[3] Num_C[3] Num_N[1] Num_C[1] Num_N[2] Num_C[2] Num_N[4] Num_C[4]]
     elseif Report=="feasiblity"
-        newrow=[Linearization_INIT[Runcode[1]] Linearization_TYPE[Runcode[2]]  Tuple(Runcode) sol_time res_time iter TR TRB OptGap ACC Vio_Sum_N."Max"[1] Vio_Sum_C."Max"[1] Vio_Sum_N."Mean"[1] Vio_Sum_C."Mean"[1] Vio_Sum_N."NVio"[1] Vio_Sum_C."NVio"[1] OP["obj_WP"] round(cost,digits=5) Abs_N[3] Abs_N[2] Abs_N[1] Abs_N[4] Abs_C[3] Abs_C[2] Abs_C[1] Abs_C[4] max_N[3] max_N[2] max_N[1] max_N[4] max_C[3] max_C[2] max_C[1] max_C[4] mean_N[3] mean_N[2] mean_N[1] mean_N[4] mean_C[3] mean_C[2] mean_C[1] mean_C[4] Num_N[3] Num_N[2] Num_N[1] Num_N[4] Num_C[3] Num_C[2] Num_C[1] Num_C[4] Tuple(Filter[1]) Tuple(Filter[2]) Tuple(Filter[3]) Tuple(Filter[4])]
+        newrow=[Linearization_INIT[Runcode[1]] Linearization_TYPE[Runcode[2]]  Tuple(Runcode) sol_time res_time iter TR TRB Rcas[3] OptGap ACC Vio_Sum_N."Max"[1] Vio_Sum_C."Max"[1] Vio_Sum_N."Mean"[1] Vio_Sum_C."Mean"[1] Vio_Sum_N."NVio"[1] Vio_Sum_C."NVio"[1] OP["obj_WP"] round(cost,digits=5) Abs_N[3] Abs_N[2] Abs_N[1] Abs_N[4] Abs_C[3] Abs_C[2] Abs_C[1] Abs_C[4] max_N[3] max_N[2] max_N[1] max_N[4] max_C[3] max_C[2] max_C[1] max_C[4] mean_N[3] mean_N[2] mean_N[1] mean_N[4] mean_C[3] mean_C[2] mean_C[1] mean_C[4] Num_N[3] Num_N[2] Num_N[1] Num_N[4] Num_C[3] Num_C[2] Num_C[1] Num_C[4] Tuple(Filter[1]) Tuple(Filter[2]) Tuple(Filter[3]) Tuple(Filter[4])]
     elseif Report=="full"
         newrow=[Linearization_INIT[Runcode[1]] Linearization_TYPE[Runcode[2]]  Tuple(Runcode) sol_time res_time iter TR TRB OptGap Vio_Sum_N."Max"[1] Vio_Sum_C."Max"[1] OP["obj_WP"] round(cost,digits=5) round.(OP["PG"],digits=5) round.(OP["QG"],digits=5) round.(OP["V"],digits=5) round.(OP["θ"],digits=5)]
     elseif Problem_Type=="SCOPF"
@@ -3280,11 +3284,16 @@ function keep_K_percent_new_4D_row_V2!(B::BitArray{4}, S::AbstractArray{T,4}, pe
     return B
 end
 
-function findTR_Q_coupled2(nTP, V_0,Vmax_VP,Vmin_VP,VmaxIndex_P,VminIndex_P,Vmaxlimit0,Vminlimit0,S_VQ,QBound,raw,cl;Improve_Rate=5)
+function findTR_Q_coupled2(Glob, nTP, V_0,Vmax_VP,Vmin_VP,VmaxIndex_P,VminIndex_P,Vmaxlimit0,Vminlimit0,S_VQ,QBound,raw,cl;Improve_Rate=5)
 
     z0=sum((V_0-Vmaxlimit0).>=0)+sum(Vminlimit0-V_0.>=0)
     zmax=round(size(Vmaxlimit0)[1]*size(Vmaxlimit0)[2]*size(Vmaxlimit0)[3]*Q_con_percent)+1
-    TR=0;TR_max=0.5;TR_min=0.00
+    if Glob["obj_imp"]
+        TR=max(0.05,Glob["TR_before"][2]);q_coef=Q_eff
+    else
+        TR=0.01; q_coef=1
+    end
+    TR_min=0.00;TR_max=TR_min+2.0
     iter=0
     Itermax=10
     Vmaxinrisk=falses(size(V_0));Vmininrisk=falses(size(V_0));
@@ -3341,7 +3350,7 @@ function findTR_Q_coupled2(nTP, V_0,Vmax_VP,Vmin_VP,VmaxIndex_P,VminIndex_P,Vmax
     Qinj_up,Qinj_dn=0,0
     y=0
     z=0
-    TR=0.01
+    # TR=0.01
     Vmaxlimit_new=Vmaxlimit0
     Vminlimit_new=Vminlimit0
     report_TR= DataFrame(worst_vio=0.0,acc=0.0,TR=0.0,z=z0,y=z0,z_acc_Q=0.0,y_acc_Q=0.0,z_acc_P=0.0,y_acc_P=0.0,plotdata=[0.0])
@@ -3351,7 +3360,7 @@ function findTR_Q_coupled2(nTP, V_0,Vmax_VP,Vmin_VP,VmaxIndex_P,VminIndex_P,Vmax
     S_VQ_pos = max.(S_VQ_4D, 0.0)
     S_VQ_neg = min.(S_VQ_4D, 0.0)
 
-    TR_best=1.0
+    TR_best=max(1.0,TR)
     while TR_max - TR_min > 1e-7  # Stop when the range is small enough
         VQ_up1.=0
         VQ_dn1.=0
@@ -3389,8 +3398,8 @@ function findTR_Q_coupled2(nTP, V_0,Vmax_VP,Vmin_VP,VmaxIndex_P,VminIndex_P,Vmax
         @views @. VQ_dn = -ovr_Sens_VQ_dnmat - DV_dn_4D
         keep_K_percent_new_4D_V2!(VQ_up1,VQ_up,0.0)
         keep_K_percent_new_4D_V2!(VQ_dn1,VQ_dn,0.0)
-        
-        
+
+
         # keep_K_percent_new_4D_V2!(VQ_up1,ovr_Sens_VQ_upmat,0.95)
         # keep_K_percent_new_4D_V2!(VQ_dn1,VQ_dn,0.0)
 
@@ -3412,13 +3421,13 @@ function findTR_Q_coupled2(nTP, V_0,Vmax_VP,Vmin_VP,VmaxIndex_P,VminIndex_P,Vmax
 
         @views ovr_Sens_VQ_up.= permutedims(sum(ovr_Sens_VQ_upmat,dims=2)[:,1,:,:], (2, 1, 3)) 
         @views ovr_Sens_VQ_dn.= permutedims(sum(ovr_Sens_VQ_dnmat,dims=2)[:,1,:,:], (2, 1, 3)) 
-        @. V_max_VPQ=(Vmax_VP+ovr_Sens_VQ_up/1 .-Vmaxlimit_new)
-        @. V_max_VQ=(V_0+ovr_Sens_VQ_up/1 .-Vmaxlimit_new)
+        @. V_max_VPQ=(Vmax_VP+ovr_Sens_VQ_up/q_coef .-Vmaxlimit_new)
+        @. V_max_VQ=(V_0+ovr_Sens_VQ_up/q_coef .-Vmaxlimit_new)
         @. V_max_VQ[VmaxIndex_P].=-10
         @. V_max_VPQ[VmaxIndex_P].=-10
 
-        @. V_min_VPQ=-(Vmin_VP+ovr_Sens_VQ_dn/1 .-Vminlimit_new)
-        @. V_min_VQ=-(V_0+ovr_Sens_VQ_dn/1 .-Vminlimit_new)
+        @. V_min_VPQ=-(Vmin_VP+ovr_Sens_VQ_dn/q_coef .-Vminlimit_new)
+        @. V_min_VQ=-(V_0+ovr_Sens_VQ_dn/q_coef .-Vminlimit_new)
         @. V_min_VQ[VminIndex_P].=-10
         @. V_min_VPQ[VminIndex_P].=-10
         @views @. vals_VP[1:V0_length] = V_max_VPQ[:]
@@ -3460,18 +3469,46 @@ function findTR_Q_coupled2(nTP, V_0,Vmax_VP,Vmin_VP,VmaxIndex_P,VminIndex_P,Vmax
         #     best_acc=acc
         #     TR_best=TR
         # end
-        if z_acc_P>=worst_vio  || ((y_acc_P<=max(0.001,maximum(Vmax_VP),maximum(-Vmin_VP))-0.001) && max(0,z_acc_Q)>=y_acc_Q && (max(0,z_acc_P)>=y_acc_P) || z_acc_Q>=worst_vio) #|| (y_acc_P<= max(0.1,maximum(Vmax_VP),maximum(-Vmin_VP))-0.1))) #|| z_acc_Q >= worst_vio #|| max(z_acc_P,z_acc_Q)>= max(0.05,y_acc_Q)
-        # if z_acc_P>=worst_vio  || ((y_acc_P<=max(0.001,maximum(Vmax_VP),maximum(-Vmin_VP))-0.001) && max(0,z_acc_Q)>=y_acc_Q && (max(0,z_acc_P)>=y_acc_P )) #|| z_acc_Q >= 0 #|| max(z_acc_P,z_acc_Q)>= max(0.05,y_acc_Q)
+        if acc <= best_acc && z_acc_Q <= y_acc_Q && z_acc_P <= worst_vio
+            best_acc = acc
+            TR_best  = TR
+        end
+        
+        if !Glob["obj_imp"]
 
-            TR_max = TR  # Reduce TR
-            if TR_max<TR_best
-                TR_best=TR_max
-                best_acc=max(0,acc)
+            if z_acc_P >= worst_vio ||
+            ((y_acc_P <= max(0.001, maximum(Vmax_VP), maximum(-Vmin_VP)) - 0.001) &&
+                max(0.0, z_acc_Q) >= y_acc_Q)
+                TR_max = TR
+            else
+                TR_min = TR
             end
+            # if z_acc_P>=worst_vio  || ((y_acc_P<=max(0.001,maximum(Vmax_VP),maximum(-Vmin_VP))-0.001) && max(0,z_acc_Q)>=y_acc_Q && (max(0,z_acc_P)>=y_acc_P) || z_acc_Q>=worst_vio) #|| (y_acc_P<= max(0.1,maximum(Vmax_VP),maximum(-Vmin_VP))-0.1))) #|| z_acc_Q >= worst_vio #|| max(z_acc_P,z_acc_Q)>= max(0.05,y_acc_Q)
+            # # if z_acc_P>=worst_vio  || ((y_acc_P<=max(0.001,maximum(Vmax_VP),maximum(-Vmin_VP))-0.001) && max(0,z_acc_Q)>=y_acc_Q && (max(0,z_acc_P)>=y_acc_P )) #|| z_acc_Q >= 0 #|| max(z_acc_P,z_acc_Q)>= max(0.05,y_acc_Q)
+
+            #     TR_max = TR  # Reduce TR
+            #     if TR_max<TR_best
+            #         TR_best=TR_max
+            #         best_acc=max(0,acc)
+            #     end
+            # else
+            #     TR_min = TR  # Increase TR
+            #     # TR_best = TR
+            #     # best_acc=max(0,acc)
+            # end
         else
-            TR_min = TR  # Increase TR
-            # TR_best = TR
-            # best_acc=max(0,acc)
+            if z_acc_P>=min(0.05,worst_vio, y_acc_P) || ((y_acc_P<=max(0.00,maximum(Vmax_VP),maximum(-Vmin_VP))-0.01) && max(0,z_acc_Q)>=y_acc_Q && (max(0,z_acc_P)>=y_acc_P)) #|| (y_acc_P<= max(0.1,maximum(Vmax_VP),maximum(-Vmin_VP))-0.1))) #|| z_acc_Q >= worst_vio #|| max(z_acc_P,z_acc_Q)>= max(0.05,y_acc_Q)
+
+                TR_max = TR  # Reduce TR
+                if TR_max<TR_best
+                    TR_best=TR_max
+                    best_acc=max(0,acc)
+                end
+            else
+                TR_min = TR  # Increase TR
+                # TR_best = TR
+                # best_acc=max(0,acc)
+            end
         end
         iter+=1
     end
@@ -3481,7 +3518,7 @@ function findTR_Q_coupled2(nTP, V_0,Vmax_VP,Vmin_VP,VmaxIndex_P,VminIndex_P,Vmax
     return TR,VmaxIndex,VminIndex,max(0.0,z_acc_Q),[Qinj_up,Qinj_dn],worst_vio,report_TR
 end
 
-function findTR_P_coupled2(nTP,CascadeInfo, Base_TR_N,Base_TR_C,I2_0,Imaxlimit0,S_IP,V_0,Vmaxlimit0,Vminlimit0,S_VP,PBound,raw,cl,acc_V0)
+function findTR_P_coupled2(Glob, nTP,CascadeInfo, Base_TR_N,Base_TR_C,I2_0,Imaxlimit0,S_IP,V_0,Vmaxlimit0,Vminlimit0,S_VP,PBound,raw,cl,acc_V0)
 
     # acc_V0=0.05
 
@@ -3491,10 +3528,15 @@ function findTR_P_coupled2(nTP,CascadeInfo, Base_TR_N,Base_TR_C,I2_0,Imaxlimit0,
     zmax_V=round(size(Vmaxlimit0)[1]*size(Vmaxlimit0)[2]*size(Vmaxlimit0)[3]*Q_con_percent_coupled)+1
     y=0
     z=0
-    TR=0.01;TR_min=0.01
-    TR_max=5;
+    if Glob["obj_imp"]
+        TR=max(0.5, Glob["TR_before"][1]);p_coef=P_eff
+    else
+        TR=0.01;;p_coef=1
+    end
+    TR_min=0.01
+    TR_max=TR_min+10.0;
     V0_length= length(V_0)
-    acc_V=max(0.01,min(acc_V0,max(maximum(V_0-Vmaxlimit0),maximum(-(V_0-Vminlimit0)))))
+    acc_V=max(0.05,min(acc_V0,max(maximum(V_0-Vmaxlimit0),maximum(-(V_0-Vminlimit0)))))
     iter=0
     Iter_max=10
     # atrisk=0
@@ -3507,6 +3549,7 @@ function findTR_P_coupled2(nTP,CascadeInfo, Base_TR_N,Base_TR_C,I2_0,Imaxlimit0,
     worst_vio=maximum(I2_0-Imaxlimit0)
     worst_vio_sqrt=max.(maximum(sqrt.(I2_0)-Imaxlimit0_sqrt) ,maximum(Base_TR_N),maximum(Base_TR_C))#, maximum(CascadeInfo["diffVm"])
     best_acc=deepcopy(worst_vio_sqrt)
+    best_acc_cas=1000
     acc=0
     z_acc_VP=0
     adj_acc=0
@@ -3564,11 +3607,11 @@ function findTR_P_coupled2(nTP,CascadeInfo, Base_TR_N,Base_TR_C,I2_0,Imaxlimit0,
     Gen_ind=indexin(raw["Gen"]."Bus", raw["PActBus"])
     report_TR=DataFrame(worst_vio_sqrt=0.0,acc=0.0,TR=0.0,z=z0,y=z0,z_acc=0.0,y_acc=0.0,y_acc_cas=0.0 ,ramp_acc=0.0,z_V=0,acc_VP=0.0)
     deleteat!(report_TR,1)
-    TR=1
+    # TR=1
     z_acc=0
     y_acc=0
     ramp_acc=0
-    TR_best=1.0
+    TR_best=deepcopy(TR)
     S_VP_pos = max.(S_VP_4D, 0.0)
     S_VP_neg = min.(S_VP_4D, 0.0)
     S_IP_pos = max.(S_IP_4D, 0.0)
@@ -3651,22 +3694,20 @@ function findTR_P_coupled2(nTP,CascadeInfo, Base_TR_N,Base_TR_C,I2_0,Imaxlimit0,
         # @views vals_VP .= vcat(vec(V_0 .+ ovr_Sens_VP_up .- Vmaxlimit0),
         #    vec(-(V_0 .+ ovr_Sens_VP_dn .- Vminlimit0)))
         
-        @views @. vals_VP[1:V0_length] = (V_0 + ovr_Sens_VP_up - Vmaxlimit0)[:]
-        @views @. vals_VP[V0_length+1:end] = (-(V_0 .+ ovr_Sens_VP_dn .- Vminlimit0))[:]
+        @views @. vals_VP[1:V0_length] = (V_0 + ovr_Sens_VP_up./p_coef - Vmaxlimit0)[:]
+        @views @. vals_VP[V0_length+1:end] = (-(V_0 .+ ovr_Sens_VP_dn./p_coef .- Vminlimit0))[:]
     
         k_VP = min(length(vals_VP), Int(zmax_V))
         z_acc_VP = partialsort(vals_VP, 1:k_VP; rev=true)[end]
 
-        @views Vmax_VP .= V_0 .+ ovr_Sens_VP_up
-        @views Vmin_VP .= V_0 .+ ovr_Sens_VP_dn
+        @views Vmax_VP .= V_0 .+ ovr_Sens_VP_up/p_coef
+        @views Vmin_VP .= V_0 .+ ovr_Sens_VP_dn/p_coef
         Vmaxinrisk .= Vmax_VP .>= Vmaxlimit0.+max(z_acc_VP,1e-4)
         Vmininrisk .= Vmin_VP .<= Vminlimit0.-max(z_acc_VP,1e-4)
 
-    
 
         ramp_acc=0
-        y_acc=max(maximum(sqrt.(max.(0,I2_0+ovr_Sens_IP_dn./P_eff)).-Imaxlimit0_sqrt),-0.1)
-
+        y_acc=maximum(sqrt.(max.(0,I2_0+ovr_Sens_IP_dn./P_eff)).-Imaxlimit0_sqrt)
         # firstind
         if !isempty(CascadeInfo)
             # y_acc_cas=maximum(sqrt.(max.(0,CascadeInfo["diffVm"][firstind].*Imaxlimit0[CascadeInfo["line_Cascade"][firstind]].+ (ovr_Sens_IP_dn_cas[firstind]./(2))));init=0)
@@ -3692,17 +3733,39 @@ function findTR_P_coupled2(nTP,CascadeInfo, Base_TR_N,Base_TR_C,I2_0,Imaxlimit0,
         #     best_acc=max(0,acc)
         #     TR_best=TR
         # end
-        if (z_acc>=max(y_acc) || y_acc<=0 || z_acc_VP >= acc_V) && (z_acc>=0 || max(0 , y_acc_cas)<=0)
-            TR_max = TR  # Reduce TR
-            if TR_max<TR_best
-                TR_best=TR_max
+
+        # if acc <= best_acc && z_acc_VP <= acc_V && y_acc_cas<=best_acc_cas
+        #     best_acc = max(0.0, acc)
+        #     best_acc_cas=max(0.0, y_acc_cas)
+        #     TR_best  = TR
+        # end
+        if !Glob["obj_imp"]
+            # if (z_acc >= max(y_acc,-0.1) || y_acc<=0 || z_acc_VP >= acc_V) && (z_acc>=0 || max(0 , y_acc_cas)<=0)
+            if (z_acc >= max(y_acc, 0.0) || y_acc <= 0 || z_acc_VP >= acc_V) && (z_acc>=y_acc_cas || max(0 , y_acc_cas)<=0)
+                TR_max = TR  # Reduce TR
+                if TR_max<TR_best
+                    TR_best=TR_max
+                    best_acc=max(0,acc)
+                end
+            else
+                TR_min = TR  # Increase TR
+                TR_best = TR
                 best_acc=max(0,acc)
             end
         else
-            TR_min = TR  # Increase TR
-            TR_best = TR
-            best_acc=max(0,acc)
+            if (z_acc>=max(y_acc) || z_acc_VP >= acc_V) && (z_acc>=0 || max(0 , y_acc_cas)<=0)
+                TR_max = TR  # Reduce TR
+                # if TR_max<TR_best
+                #     TR_best=TR_max
+                #     best_acc=max(0,acc)
+                # end
+            else
+                TR_min = TR  # Increase TR
+                # TR_best = TR
+                # best_acc=max(0,acc)
+            end
         end
+
         iter+=1
     end
 
@@ -3791,20 +3854,20 @@ function analysis_C(casreps)
     return CasNum,Worst_Cas_per,Mean_Cas_per,Worst_Cas_MW,Mean_Cas_MW
 end
 
-function Make_cascade_Rep(casreps,OP_NLP,LNS_cas_NLP)
+function Make_cascade_Rep(casreps,OP_NLP,LNS_cas_NLP,Rcas,R_OP)
     # V_1,θ_1,PG_1,QG_1,cost1=Matrix(out."mag_v"[1]),Matrix(out."ang_v"[1]),Matrix(out."PG"[1]),Matrix(out."QG"[1]),out."OFValue_WP"[1]
     CasNum,Worst_Cas_per,Mean_Cas_per,Worst_Cas_MW,Mean_Cas_MW=analysis_C(casreps)
     # cost1=OP_NLP["obj"]
-    Head=["Initialization";"Method";"Time";"Res_Time";"Iter";"TR";"LNS_Cas";"OptGap";"CasNum";"Worst_Cas_per";"Mean_Cas_per";"Worst_Cas_MW";"Mean_Cas_MW"]
+    Head=["Runcode";"Time";"Iter";"LNS_Cas";"R_0";"R";"R_S"; "ROP_0";"ROP";"ROP_S";"CasNum";"Worst_Cas_per";"Mean_Cas_per";"Worst_Cas_MW";"Mean_Cas_MW"]
     Cascade_rep=DataFrame(repeat([[]],length(Head)), Head)
-    newrow=["-" "Non-Linear" 0 OP_NLP["time"] "-" "-" LNS_cas_NLP "-" CasNum Worst_Cas_per Mean_Cas_per Worst_Cas_MW Mean_Cas_MW]
+    newrow=["-" OP_NLP["time"] "-" LNS_cas_NLP Rcas[1] Rcas[2] Rcas[3] R_OP[1] R_OP[2] R_OP[3] CasNum Worst_Cas_per Mean_Cas_per Worst_Cas_MW Mean_Cas_MW]
     push!(Cascade_rep,newrow[1,:])
 
     return Cascade_rep
 end
 
 
-function Add_Cascade_Rep!(casreps,LNS_cas,Glob,Cascade_Rep,OP,cost,OptGap,iter,sol_time,res_time,R_P=0,R_Q=0;Convergence=true)
+function Add_Cascade_Rep!(casreps,LNS_cas,Glob,Cascade_Rep,Rcas,R_OP,OP,cost,OptGap,iter,sol_time,res_time,R_P=0,R_Q=0;Convergence=true)
     # Glob,Iter_Rep,out,OP,cost,OptGap,Vio_Sum_N,Vio_Sum_C,Vio_general_N,Vio_general_C,iter,sol_time,res_time=Glob,Iter_Rep,init_out,Best_solution,mincost,minOptGap,Best_vio_sum_N,Best_vio_sum_C,Best_vio_general_N,Best_vio_general_C,iter,0,0
     Runcode= Glob["Runcode"]
     if iter !=0 TRB=OP["FilterIndex"] else TR=0;TRB=0 end
@@ -3812,7 +3875,7 @@ function Add_Cascade_Rep!(casreps,LNS_cas,Glob,Cascade_Rep,OP,cost,OptGap,iter,s
     TR="["*join(string.(round.(OP["TR"], digits=4)),",")*"]"
 
     CasNum,Worst_Cas_per,Mean_Cas_per,Worst_Cas_MW,Mean_Cas_MW =analysis_C(casreps)
-    newrow=[Linearization_INIT[Runcode[1]] Linearization_TYPE[Runcode[2]] sol_time res_time iter TR TRB OptGap CasNum Worst_Cas_per Mean_Cas_per Worst_Cas_MW Mean_Cas_MW]
+    newrow=[Runcode res_time iter TRB Rcas[1] Rcas[2] Rcas[3] R_OP[1] R_OP[2] R_OP[3] CasNum Worst_Cas_per Mean_Cas_per Worst_Cas_MW Mean_Cas_MW]
 
     push!(Cascade_Rep,newrow[1,:])
     return Cascade_Rep
@@ -4683,22 +4746,31 @@ function make_cascade_stopping_stage_plot4(Glob, casreps, iter, model=nothing; r
         title      = "Simulation — Total Load Shed per (Time, Contingency),  iter=$(iter)"
 
         #elseif bin_Cas exist in model
-    elseif haskey(model, :bin_Cas)
+    elseif haskey(model, :bin_Cas) 
         # --- Optimization ---
         bin_cas  = model[:bin_Cas]
         indices  = getfield.(getfield.(keys(bin_cas), :I), 1)
         # tc_all   = Set(map(((t, c, _),) -> (t, c), indices))
         vals     = value.(bin_cas).data
-        stages   = findall(x -> x == 1, vals)
+        
         # @assert length(tc_all) == length(stages)
-        stopat    = getfield.(indices[stages], 3) .- 1
-        tc_stopat = map(((t, c, _),) -> (t, c), indices[stages])
+        if Glob["Risk_cascade"]== "MS"
+            stages   = findall(x -> x == 1, vals)
+            stopat    = getfield.(indices[stages], 3) .- 1
+            tc_stopat = map(((t, c, _),) -> (t, c), indices[stages])
+            tc_stopat = map(((t, c, _),) -> (t, c), indices[stages])
+        elseif Glob["Risk_cascade"] == "SS"
+            stages   = findall(x -> x == 0, vals)
+            stopat0= size.(casreps[CartesianIndex.(indices)],1).-1
+            stopat= round.(Int,(1 .-vals).*stopat0)
+            tc_stopat = indices
+        end
         elements  = [casreps[CartesianIndex(tc_stopat[x])][stopat[x]+1, "LL"]
                 for x in 1:length(stages)]
         optstage_out= (tc_stopat,stopat.+1,elements)
         LNS_stop  = [casreps[CartesianIndex(tc_stopat[x])][stopat[x]+1, "LNS_T"]
-                     for x in 1:length(stages)]
-        labels_map = Dict(tc_stopat[x] => stopat[x]  for x in 1:length(stages))
+                    for x in 1:length(stopat)]
+        labels_map = Dict(tc_stopat[x] => stopat[x]  for x in 1:length(stopat))
         title      = "Optimization — Load Shed at Stopping Stage,  iter=$(iter)"
     else
         bin_cas=model[:slk_cas]
@@ -4987,20 +5059,20 @@ function XXmodel(Glob,OP_init,model)
     Vviomin_C_0 = Vdiffmin_C[CartesianIndex.(model[:slkDataFrame]["slkVmin_c"])]
     Vviomin_C= filter(x->x>1e-6,Vviomin_C_0 .* value(model[:slk_Vmin_c]))
 
-    Idiffmax= sqrt.(value.(model[:Line_flow])) .- (Glob["SysData"]["Line"]."RATE_A")'
+    Idiffmax= sqrt.(max.(0,value.(model[:Line_flow]))) .- (Glob["SysData"]["Line"]."RATE_A")'
     Iviomax= filter(x->x>1e-6,Idiffmax[CartesianIndex.(model[:slkDataFrame]["slkImax"])])
-    Idiffmax_C= sqrt.(value.(model[:Line_flow_c_Line])) .- (Glob["SysData"]["Line"]."RATE_A")'
+    Idiffmax_C= sqrt.(max.(0,value.(model[:Line_flow_c_Line]))) .- (Glob["SysData"]["Line"]."RATE_A")'
     Iviomax_C= filter(x->x>1e-6,Idiffmax_C[CartesianIndex.(model[:slkDataFrame]["slkImax_c"])])
     rep=DataFrame(Vmin_Abs= maximum(Vviomin;init=0), Vmax_Abs= maximum(Vviomax;init=0), Vmin_C_Abs= maximum(Vviomin_C;init=0), Vmax_C_Abs= maximum(Vviomax_C;init=0), Vmin_N_M= mean(Vviomin), Vmax_N_M= mean(Vviomax), Vmin_C_M= mean(Vviomin_C), Vmax_C_M= mean(Vviomax_C), Vmin_N_N= length(Vviomin), Vmax_N_N= length(Vviomax), Vmin_C_N= length(Vviomin_C), Vmax_C_N= length(Vviomax_C), Smax_N= maximum(Iviomax;init=0), Smax_C= maximum(Iviomax_C;init=0), Smax_N_M= mean(Iviomax), Smax_C_M= mean(Iviomax_C), Smax_N_N= length(Iviomax), Smax_C_N= length(Iviomax_C))
     return rep[1,:]
 end
 
 
-function makecasfig(key,figs,path)
+function makecasfig(key,figs,path;prefix="")
     outdir = path * "../Result/Iter_Report/Figs"
     mkpath(outdir)
 
-    key_clean = replace(string(key), r"[/\\:*?\"<>|()]" => "_")
+    key_clean = replace(prefix * string(key), r"[/\\:*?\"<>|()]" => "_")
     outpath   = joinpath(outdir, "$(key_clean).pdf")
     tmpfiles  = [tempname() * ".pdf" for _ in figs]
 
@@ -5021,7 +5093,10 @@ function opt_tcs(optstage,casreps)
         # findall(x-> optstage[2][x]>=size(casreps[CartesianIndex(optstage[1][x])],1) ,1:length(optstage[1]))
         tc_hist_green=findall(x-> optdict[x]>=size(casreps[CartesianIndex(x)],1),optstage[1])
         # tc_hist_red_1=findall(x-> optdict[x]<size(casreps[CartesianIndex(x)],1),optstage[1])
-        greentc= tuple.(getindex.(optstage[1][tc_hist_green],1), getindex.(optstage[1][tc_hist_green],2), optstage[2][tc_hist_green])
+
+        # size.(casreps[CartesianIndex.(optstage[1][tc_hist_green])],1)
+        # size(casreps[CartesianIndex(x)],1)
+        greentc= tuple.(getindex.(optstage[1][tc_hist_green],1), getindex.(optstage[1][tc_hist_green],2),         size.(casreps[CartesianIndex.(optstage[1][tc_hist_green])],1))
 
         tc_hist_red_1=findall(x-> optstage[2][x]<size(casreps[CartesianIndex(optstage[1][x])],1) && issubset(casreps[CartesianIndex(optstage[1][x])][optstage[2][x],"LL"], optstage[3][x]) ,1:length(optstage[1]))
         redtc= tuple.(getindex.(optstage[1][tc_hist_red_1],1), getindex.(optstage[1][tc_hist_red_1],2), optstage[2][tc_hist_red_1])
@@ -5033,7 +5108,1247 @@ function opt_tcs(optstage,casreps)
         # redtc2= tuple.(getindex.(tc_red,1), getindex.(tc_red,2),    map(x -> x.I in optstage[1] ? optdict[x.I] : 1, tc_red))
         # tc_new=setdiff(tc_rem, tc_red)
         newtc= tuple.(getindex.(tc_new,1), getindex.(tc_new,2), 1)
-
         contind = isempty([redtc;newtc]) ? 0 : 1
         return [greentc;redtc;newtc] , contind
+end
+
+
+function Cal_SENS_new_opt2(Lininit::Dict{String,Any}, ctdall, nTP::Int64,
+                           raw::Dict{String,Any}; C::String="N")
+    nbus   = raw["nBus"];     nline  = raw["nLine"];    ntrans = raw["nTrans"]
+    nPbus  = raw["nPActBus"]; nQbus  = raw["nQActBus"]
+    Pbus   = raw["PActBus"];  Qbus   = raw["QActBus"]
+    if C == "N"
+        CC = 1;  V_0 = Lininit["V"];          θ_0 = Lininit["θ"]
+        exc = [[]];  Jacob = Lininit["NJacob"]
+    elseif C == "CL"
+        CC = raw["nConL"];  V_0 = Lininit["V_c_Line"];  θ_0 = Lininit["θ_c_Line"]
+        exc = raw["ConL"]."#";  Jacob = Lininit["CJacob"]
+    else
+        error("Unsupported C = $C")
+    end
+    nLT   = nline + ntrans
+    n_jac = size(Jacob[1,1], 1)
+    # ── line data ─────────────────────────────────────────────────────────────
+    Names = ["From","To","g (pu)","b (pu)","g_sh (pu)","b_sh (pu)"]
+    df    = vcat(raw["Line"][:,Names], raw["Trans"][:,Names])
+    g  = Float64.(df."g (pu)")
+    b  = Float64.(df."b (pu)")
+    fb = Int.(df."From")
+    tb = Int.(df."To")
+    Line_admittance    = @. g^2 + b^2
+    Line_admittancemat = repeat(reshape(Line_admittance, 1, nLT, 1), nTP, 1, CC)
+    Δθ = θ_0[:, fb, :] .- θ_0[:, tb, :]
+    Vn = V_0[:, fb, :]
+    Vm = V_0[:, tb, :]
+    P_rows = Pbus
+    Q_rows = nbus .+ Qbus
+    # ── Pa pattern + nonzero index mapping ────────────────────────────────────
+    I_idx    = vcat(1:nLT, 1:nLT)
+    J_idx    = vcat(fb,    tb)
+    Pa_proto = sparse(I_idx, J_idx, zeros(Float64, 2*nLT), nLT, nbus)
+    nz_fb = [find_nz_idx(Pa_proto, k, fb[k]) for k in 1:nLT]
+    nz_tb = [find_nz_idx(Pa_proto, k, tb[k]) for k in 1:nLT]
+    # ── one KLU per (thread × contingency) ───────────────────────────────────
+    nthreads = Threads.nthreads()
+    KLU_tc   = Matrix{Any}(undef, nthreads, CC)
+    for c in 1:CC
+        for tid in 1:nthreads
+            KLU_tc[tid, c] = klu(Jacob[1,c])
+        end
+    end
+    # ── output: Float32 — half the memory ─────────────────────────────────────
+    SENSDict_IP = Array{Matrix{Float32}}(undef, nTP, CC)   # ← CHANGED
+    SENSDict_IQ = Array{Matrix{Float32}}(undef, nTP, CC)   # ← CHANGED
+    SENSDict_VP = Array{Matrix{Float32}}(undef, nTP, CC)   # ← CHANGED
+    SENSDict_VQ = Array{Matrix{Float32}}(undef, nTP, CC)   # ← CHANGED
+    SENSDict_θP = Array{Matrix{Float32}}(undef, nTP, CC)   # ← CHANGED
+    SENSDict_θQ = Array{Matrix{Float32}}(undef, nTP, CC)   # ← CHANGED
+    # ── scratch: stays Float64 — computation precision ────────────────────────
+    Pa_IV_t    = Vector{SparseMatrixCSC{Float64,Int}}(undef, nthreads)
+    Pa_Iθ_t    = Vector{SparseMatrixCSC{Float64,Int}}(undef, nthreads)
+    SENStemp_P = Vector{Matrix{Float64}}(undef, nthreads)
+    SENStemp_Q = Vector{Matrix{Float64}}(undef, nthreads)
+    rhs_t      = Vector{Vector{Float64}}(undef, nthreads)
+    sol_t      = Vector{Vector{Float64}}(undef, nthreads)
+    tmp_IP_t   = Vector{Matrix{Float64}}(undef, nthreads)  # ← ADDED: Float64 mul! temp
+    tmp_IQ_t   = Vector{Matrix{Float64}}(undef, nthreads)  # ← ADDED: Float64 mul! temp
+    Threads.@threads :static for tid in 1:nthreads
+        Pa_IV_t[tid]    = copy(Pa_proto)
+        Pa_Iθ_t[tid]    = copy(Pa_proto)
+        SENStemp_P[tid] = Matrix{Float64}(undef, n_jac, nPbus)
+        SENStemp_Q[tid] = Matrix{Float64}(undef, n_jac, nQbus)
+        rhs_t[tid]      = zeros(Float64, n_jac)
+        sol_t[tid]      = zeros(Float64, n_jac)
+        tmp_IP_t[tid]   = Matrix{Float64}(undef, nLT, nPbus)  # ← ADDED
+        tmp_IQ_t[tid]   = Matrix{Float64}(undef, nLT, nQbus)  # ← ADDED
+    end
+    Threads.@threads :static for t in 1:nTP
+        for c in 1:CC
+            SENSDict_IP[t,c] = Matrix{Float32}(undef, nLT,  nPbus)  # ← CHANGED
+            SENSDict_IQ[t,c] = Matrix{Float32}(undef, nLT,  nQbus)  # ← CHANGED
+            SENSDict_VP[t,c] = Matrix{Float32}(undef, nbus, nPbus)  # ← CHANGED
+            SENSDict_VQ[t,c] = Matrix{Float32}(undef, nbus, nQbus)  # ← CHANGED
+            SENSDict_θP[t,c] = Matrix{Float32}(undef, nbus, nPbus)  # ← CHANGED
+            SENSDict_θQ[t,c] = Matrix{Float32}(undef, nbus, nQbus)  # ← CHANGED
+        end
+    end
+    SENSDict = Dict(
+        "S_IP" => SENSDict_IP, "S_IQ" => SENSDict_IQ,
+        "S_VP" => SENSDict_VP, "S_VQ" => SENSDict_VQ,
+        "S_θP" => SENSDict_θP, "S_θQ" => SENSDict_θQ
+    )
+    # ── threaded over t, serial over c ───────────────────────────────────────
+    for c in 1:CC
+        Threads.@threads :static for t in 1:nTP
+            tid    = Threads.threadid()
+            Pa_IV  = Pa_IV_t[tid];   Pa_Iθ  = Pa_Iθ_t[tid]
+            SP     = SENStemp_P[tid]; SQ    = SENStemp_Q[tid]
+            rhs    = rhs_t[tid];      sol   = sol_t[tid]
+            tmp_IP = tmp_IP_t[tid];   tmp_IQ = tmp_IQ_t[tid]  # ← ADDED
+            F      = KLU_tc[tid, c]
+            nz_IV  = nonzeros(Pa_IV)
+            nz_Iθ  = nonzeros(Pa_Iθ)
+            klu!(F, Jacob[t,c])
+            @inbounds for k in 1:nLT
+                LA = Line_admittancemat[t,k,c]
+                vn = Vn[t,k,c]; vm = Vm[t,k,c]; dθ = Δθ[t,k,c]
+                nz_IV[nz_fb[k]] = LA*(2*vn - 2*vm*cos(dθ))
+                nz_IV[nz_tb[k]] = LA*(2*vm - 2*vn*cos(dθ))
+                val = LA*2*vn*vm*sin(dθ)
+                nz_Iθ[nz_fb[k]] =  val
+                nz_Iθ[nz_tb[k]] = -val
+            end
+            @inbounds for j in 1:nPbus
+                fill!(rhs, 0.0)
+                rhs[P_rows[j]] = 1.0
+                ldiv!(sol, F, rhs)
+                @views SP[:,j] .= sol
+                rhs[P_rows[j]] = 0.0
+            end
+            @inbounds for j in 1:nQbus
+                fill!(rhs, 0.0)
+                rhs[Q_rows[j]] = 1.0
+                ldiv!(sol, F, rhs)
+                @views SQ[:,j] .= sol
+                rhs[Q_rows[j]] = 0.0
+            end
+            VP = view(SP, nbus+1:n_jac, :);  θP = view(SP, 1:nbus, :)
+            VQ = view(SQ, nbus+1:n_jac, :);  θQ = view(SQ, 1:nbus, :)
+            # ── mul! in Float64 → store as Float32 ────────────────────────────
+            mul!(tmp_IP, Pa_IV, VP, 1.0, 0.0)          # ← CHANGED
+            mul!(tmp_IP, Pa_Iθ, θP, 1.0, 1.0)          # ← CHANGED
+            @views tmp_IP[exc[c],:] .= 0                # ← CHANGED
+            SENSDict_IP[t,c] .= Float32.(tmp_IP)        # ← CHANGED
+
+            mul!(tmp_IQ, Pa_IV, VQ, 1.0, 0.0)          # ← CHANGED
+            mul!(tmp_IQ, Pa_Iθ, θQ, 1.0, 1.0)          # ← CHANGED
+            @views tmp_IQ[exc[c],:] .= 0                # ← CHANGED
+            SENSDict_IQ[t,c] .= Float32.(tmp_IQ)        # ← CHANGED
+
+            SENSDict_VP[t,c] .= Float32.(VP)            # ← CHANGED
+            SENSDict_VQ[t,c] .= Float32.(VQ)            # ← CHANGED
+            SENSDict_θP[t,c] .= Float32.(θP)            # ← CHANGED
+            SENSDict_θQ[t,c] .= Float32.(θQ)            # ← CHANGED
+        end
+    end
+    return SENSDict
+end
+
+function find_nz_idx(A::SparseMatrixCSC, row::Int, col::Int)
+    for i in A.colptr[col]:A.colptr[col+1]-1
+        A.rowval[i] == row && return i
+    end
+    error("Entry ($row,$col) not found")
+end
+
+
+function make_cascade_risk_plot(Glob, casreps, iter, model=nothing; reprow=nothing, optstage=nothing,h_cas=nothing)
+
+    nCon = size(Glob["SysData"]["ConL"], 1)
+    nTP  = Glob["nTL"]
+
+    # --- Adaptive sizing ---
+    cell_w    = min(2000,2000/nTP)                              # pixels per time period
+    cell_h    = min(cell_w,600/nCon)                             # pixels per contingency
+    fig_w     = min(2200, nTP  * cell_w + 200)  # +200 for colorbar + margins
+    fig_h     = min(750, nCon * cell_h + 150)  # +150 for title + bottom row
+    fig_h_tot = fig_h + (reprow === nothing ? 60 : 80)
+
+    # Font and offset scale with cell size
+    cell_size   = min(cell_w, cell_h)
+    fsize_cell  = clamp(round(Int, cell_size / 9),  18, 28)   # annotation font
+    fsize_ax    = clamp(round(Int, cell_size / 8),  18, 28)   # axis font
+    font_table = fsize_ax
+    off3        = clamp(cell_h / 220, 0.15, 0.32)            # 3-line vertical offset
+    off2        = clamp(cell_h / 300, 0.10, 0.20)            # 2-line vertical offset
+    # line_h = fsize_cell * (nCon / (fig_h - 150))   # axis units per line of text
+    linespace = 0.2*1.1
+    # padding = cell_h / fsize_cell
+    optstage_out = nothing
+
+    if isnothing(model)
+        # --- Simulation ---
+        tc_stop   = findall(x -> size(x, 1) > 1, casreps)
+        tc_stopat = getfield.(tc_stop, :I)
+        stopat    = map(x -> x[end, 1], casreps[tc_stop])
+        # casv=0
+        # casvtc=0
+        # for d in tc_stop
+        #     stagevio=maximum.(casreps[d]."VM",init=-10)
+        #     casvio=minimum(filter(x-> x>=0,stagevio))
+        #     if casvio>casv
+        #         casv=casvio
+        #         casvtc=d
+        #     end
+        # end
+        LNS_stop  = [casreps[CartesianIndex(tc_stopat[x])][stopat[x]+1, "LNS_T"]
+                     for x in 1:length(stopat)]
+        # if Glob["Risk_cascade"] == "RSS"
+        #     Risk_stop  =Esev_cal.(casreps)
+        # end
+        labels_map = Dict(tc_stopat[x] => stopat[x]  for x in 1:length(stopat))
+        title      = "Simulation — Total Load Shed per (Time, Contingency),  iter=$(iter)"
+
+        #elseif bin_Cas exist in model
+    elseif Glob["Risk_cascade"] == "RSS"
+        # vals2= value.(model[:pbd]).data .>= 1e-4
+        # vals2=value.(model[:rcas_OP])
+        # indices  = getfield.(getfield.(keys(model[:rcas_OP]), :I), 1)
+        # vals= value.(model[:rcas_OP]).data .<= 1e-6
+
+        indices  = getfield.(getfield.(keys(model[:pbd]), :I), 1)
+        vals= value.(model[:pbd]).data .<= 1e-6
+        # value.(model[:Worst_slk_Pen])
+        # value.(model[:rcas_OP])
+        stages   = findall(x -> x == 0, vals)
+        # stages2   = findall(x -> x <= 1e-4, vals2)
+        # stages= intersect(stages1,stages2)
+        stopat0= size.(casreps[CartesianIndex.(indices)],1).-1
+        stopat= round.(Int,(1 .-vals).*stopat0)
+        tc_stopat = indices
+        Risk_stop  = value.(model[:rcas_OP]).data
+        elements  = [casreps[CartesianIndex(tc_stopat[x])][stopat[x]+1, "LL"] for x in 1:length(stopat)]
+        optstage_out= (tc_stopat,stopat.+1,elements)
+        LNS_stop  = [casreps[CartesianIndex(tc_stopat[x])][stopat[x]+1, "LNS_T"]
+                    for x in 1:length(stopat)]
+        labels_map = Dict(tc_stopat[x] => stopat[x]  for x in 1:length(stopat))
+        title      = "Optimization — Load Shed at Stopping Stage,  iter=$(iter)"
+    elseif haskey(model, :bin_Cas)
+        # --- Optimization ---
+        bin_cas  = model[:bin_Cas]
+        indices  = getfield.(getfield.(keys(bin_cas), :I), 1)
+        # tc_all   = Set(map(((t, c, _),) -> (t, c), indices))
+        vals     = value.(bin_cas).data
+        
+        # @assert length(tc_all) == length(stages)
+        if Glob["Risk_cascade"]== "MS"
+            stages   = findall(x -> x == 1, vals)
+            stopat    = getfield.(indices[stages], 3) .- 1
+            tc_stopat = map(((t, c, _),) -> (t, c), indices[stages])
+            tc_stopat = map(((t, c, _),) -> (t, c), indices[stages])
+        elseif Glob["Risk_cascade"] == "SS"
+            stages   = findall(x -> x == 0, vals)
+            stopat0= size.(casreps[CartesianIndex.(indices)],1).-1
+            stopat= round.(Int,(1 .-vals).*stopat0)
+            tc_stopat = indices
+        # elseif Glob["Risk_cascade"] == "RSS"
+        #     # vals2= value.(model[:pbd]).data .>= 1e-4
+        #     # vals2=value.(model[:rcas_OP])
+        #     vals= value.(model[:rcas_OP]).data .<= 1e-6
+        #     # value.(model[:Worst_slk_Pen])
+        #     # value.(model[:rcas_OP])
+
+        #     stages   = findall(x -> x == 0, vals)
+        #     # stages2   = findall(x -> x <= 1e-4, vals2)
+        #     # stages= intersect(stages1,stages2)
+        #     stopat0= size.(casreps[CartesianIndex.(indices)],1).-1
+        #     stopat= round.(Int,(1 .-vals).*stopat0)
+        #     tc_stopat = indices
+        #     Risk_stop  = value.(model[:rcas_OP]).data
+        end
+        elements  = [casreps[CartesianIndex(tc_stopat[x])][stopat[x]+1, "LL"]
+                for x in 1:length(stages)]
+        optstage_out= (tc_stopat,stopat.+1,elements)
+        LNS_stop  = [casreps[CartesianIndex(tc_stopat[x])][stopat[x]+1, "LNS_T"]
+                    for x in 1:length(stopat)]
+        labels_map = Dict(tc_stopat[x] => stopat[x]  for x in 1:length(stopat))
+        title      = "Optimization — Load Shed at Stopping Stage,  iter=$(iter)"
+    else
+        bin_cas=model[:slk_cas]
+        indices  = getfield.(getfield.(keys(bin_cas), :I), 1)
+        vals     = value.(bin_cas).data .>= 1e-4
+        stopat0= size.(casreps[CartesianIndex.(indices)],1).-1
+        stopat= vals.*stopat0
+        LNS_stop  = [casreps[CartesianIndex(indices[x])][stopat[x]+1, "LNS_T"]
+                for x in 1:length(indices)]
+        # stopat= (vals.==1) ? 0 : stopat0
+        tc_stopat = indices
+        elements = [casreps[CartesianIndex(indices[x])][stopat[x]+1, "LL"]
+                for x in 1:length(indices)]
+        optstage_out= (tc_stopat,stopat.+1,elements)
+        labels_map = Dict(tc_stopat[x] => stopat[x]  for x in 1:length(indices))
+        title      = "Optimization — Load Shed at Stopping Stage,  iter=$(iter)"
+    end
+
+    # --- Build matrices ---
+    loadshed_map = Dict(tc_stopat[x] => LNS_stop[x] for x in 1:length(stopat))
+    if isnothing(model)
+        RS  =Esev_cal.(casreps)
+    elseif Glob["Risk_cascade"] == "RSS"
+        Risk_map = Dict(tc_stopat[x] => Risk_stop[x] for x in 1:length(stopat))
+        RS=[get(Risk_map, (t, c), 0) for  t in 1:nTP, c in 1:nCon]
+    end
+    if Glob["Risk_cascade"] == "RSS" || isnothing(model)
+        Sys_Risk= Rcas_cal_RS(RS)
+        Max_OP_Risk= maximum(RS)
+    else
+        Sys_Risk= NaN
+        Max_OP_Risk= NaN
+    end
+
+    LS = [get(loadshed_map, (t, c), casreps[t, c][end, "LNS_T"]) for c in 1:nCon, t in 1:nTP]
+    LB = [get(labels_map,   (t, c), 0)                           for c in 1:nCon, t in 1:nTP]
+
+    LS_plot = Float64.(LS)
+    LS_plot[LS .== 0.0 .&& LB .== 0] .= NaN
+
+    ls_max = sum(Glob["SysData"]["Load"][!, "Pd (pu)"]; init=0)
+
+    # --- Figure ---
+    fig = Figure(size = (fig_w, fig_h_tot), fontsize = fsize_ax)
+    # if Test_Sys== "39bus/"
+        ax = Axis(fig[1, 1];
+            title              = title,
+            xlabel             = "Time Period",
+            ylabel             = "Contingency",
+            xticks             = (1:nTP,  string.(1:nTP)),
+            yticks             = (1:nCon, string.(1:nCon)),
+            xticklabelrotation = π/4
+        )
+
+        hm = CairoMakie.heatmap!(ax, 1:nTP, 1:nCon, LS_plot';
+            colormap   = cgrad([:mistyrose, :red, :darkred]),
+            colorrange = (0, ls_max),
+            nan_color  = :lightgrey
+        )
+        if !isnothing(optstage) #&& !isnothing(cas_hist)
+            # tc_hist_red=map(((t, _, c),) -> (t, c), cas_hist)
+            optdict=Dict(zip(optstage[1],optstage[2]))
+            # casreps[CartesianIndex(optstage[1][x])][optstage[2][x]-1,"LL"] == optstage[3][x]
+            # findall(x-> optstage[2][x]>=size(casreps[CartesianIndex(optstage[1][x])],1) ,1:length(optstage[1]))
+            tc_hist_green=findall(x-> optdict[x]>=size(casreps[CartesianIndex(x)],1),optstage[1])
+            # tc_hist_red_1=findall(x-> optdict[x]<size(casreps[CartesianIndex(x)],1),optstage[1])
+
+            # findall(x-> optstage[2][x]<size(casreps[CartesianIndex(optstage[1][x])],1) ,1:length(optstage[1]))
+            # tc_hist_red= findall(x-> ,1:length(optstage[1]))
+            tc_hist_red_1=findall(x-> optstage[2][x]<size(casreps[CartesianIndex(optstage[1][x])],1) && issubset(casreps[CartesianIndex(optstage[1][x])][optstage[2][x],"LL"], optstage[3][x]) ,1:length(optstage[1]))
+            # tc_hist_red_1=[]
+            tc_all= findall(x-> size(x,1)>1 || x[1,"LNS_T"]>0,casreps)
+            tc_rem= setdiff(tc_all, CartesianIndex.(union(optstage[1][tc_hist_red_1],optstage[1][tc_hist_green])))
+            tc_red=tc_rem[findall(x-> all([ hasproperty(h_cas,:tup) && ((x[1],casreps[x][1,"LL"][i],x[2]) in h_cas.tup) for i=1:length(casreps[x][1,"LL"])]) , tc_rem)]
+
+            tc_new=setdiff(tc_rem, tc_red)
+            greenbar= Dict(zip(optstage[1][tc_hist_green], optstage[2][tc_hist_green]))
+            redbar= Dict(zip(optstage[1][tc_hist_red_1], optstage[2][tc_hist_red_1]))
+            for x in tc_red
+                # if (x[1],x[2]) in optstage[1]
+                #     redbar[(x[1],x[2])]= optdict[(x[1],x[2])]
+                # else
+                    redbar[(x[1],x[2])]= 1
+                # end
+            end
+        else
+            tc_new=[]
+            greenbar=Dict()
+            redbar=Dict()
+        end
+        for t in 1:nTP, c in 1:nCon
+            ls        = LS[c, t]
+            lbl       = LB[c, t]
+            no_event  = ls == 0.0 && lbl == 0
+            fontcolor = ls >= 0.5 * ls_max ? :white : :black
+
+            if no_event
+                text!(ax, t, c;
+                    text = "NC", align = (:center, :center), fontsize = fsize_cell, color = :grey)
+            elseif Test_Sys != "39bus/"
+                text!(ax, t, c;
+                    text = @sprintf("%.2f", ls), align = (:center, :center), fontsize = fsize_cell-2, color = fontcolor)
+            elseif lbl == 0
+                # Load shed but no cascade — two lines
+                text!(ax, t, c + off2;
+                    text = @sprintf("%.2f", ls), align = (:center, :center), fontsize = fsize_cell, color = fontcolor)
+                text!(ax, t, c - off2;
+                    text = "MW",                 align = (:center, :center), fontsize = fsize_cell, color = fontcolor)
+            else
+                # Load shed + cascade — three lines
+                text!(ax, t, c + 0.4;
+                    text = @sprintf("%.2f", ls), align = (:center, :center), fontsize = fsize_cell, color = fontcolor)
+                text!(ax, t, c+ 0.4 - linespace;
+                    text = "MW",                 align = (:center, :center), fontsize = fsize_cell, color = fontcolor)
+                if Glob["Risk_cascade"] == "RSS"
+                    text!(ax, t, c - 0.35+linespace;
+                        text = @sprintf("r: %.1e", RS[t,c]),          align = (:center, :center), fontsize = fsize_cell, color = fontcolor)
+                else
+                    text!(ax, t, c - 0.35+linespace;
+                        text = "s: $(lbl),",          align = (:center, :center), fontsize = fsize_cell, color = fontcolor)
+                end
+                #draw underline below s: $(lbl)
+                if CartesianIndex(t, c) in tc_new
+                    text!(ax, t, c - 0.4;
+                        text = "*NEW*",      align = (:center, :center), fontsize = fsize_cell-3, color = fontcolor)
+                elseif (t, c) in keys(redbar)
+                    lines!(ax, [t-0.3, t+0.3], [c - 0.375+linespace/2, c - 0.375+linespace/2];
+                        color = :black, linewidth = 1.5)
+                    text!(ax, t, c - 0.4;
+                        text = "s: $(redbar[(t, c)]-1)| $(round(maximum(casreps[t,c][redbar[(t, c)],"VM"])-Glob["I_relax"],digits=3))",      align = (:center, :center), fontsize = fsize_cell-2, color = fontcolor)
+                elseif (t, c) in keys(greenbar)
+                    lines!(ax, [t-0.3, t+0.3], [c - 0.375+linespace/2, c - 0.375+linespace/2];
+                        color = :Green, linewidth = 1.5)
+                end
+
+            end
+        end
+
+        #   text!(ax, 8, 5;
+        #             text = @sprintf("%.2f", ls), align = (:center, :center), fontsize = 9, color = fontcolor)
+
+
+        Colorbar(fig[1, 2], hm;
+            label    = "Load Shed (MW)",
+            ticks    = LinearTicks(5),
+            flipaxis = true
+        )
+
+        # --- Bottom row: table (left) + legend (right) ---
+        bottom = GridLayout(fig[2, 1:2])
+
+        # ── Table (left) ──────────────────────────────────────────
+        if reprow !== nothing
+            ax_t = Axis(bottom[1, 1])
+            hidedecorations!(ax_t)
+            hidespines!(ax_t)
+
+            ax_t2= Axis(bottom[1, 1])
+            hidedecorations!(ax_t2)
+            hidespines!(ax_t2)
+
+            # Grid definition
+            if isnothing(model) && isnothing(optstage)
+                cw = [0.07, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04]
+            else
+                cw = [0.07, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04]
+            end
+            # cw = [0.07, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04, 0.04]
+            rh = [0.10, 0.10, 0.10, 0.10]
+            # CairoMakie.xlims!(ax_t, 0, sum(cw))
+            # CairoMakie.ylims!(ax_t, 0, sum(rh))
+
+            x0_2=sum(cw)+0.02; x1_2=sum(cw)+0.06; y0_2=0; y1_2=sum(rh)
+            CairoMakie.xlims!(ax_t, 0, x1_2)
+            CairoMakie.ylims!(ax_t, y0_2, y1_2)
+
+            cx = cumsum([0; cw])
+            ry = cumsum([0; rh])
+            flip(y) = sum(rh) - y
+
+            cell_center_x(col) = (cx[col+1] + cx[col+2]) / 2
+            cell_center_y(row) = flip((ry[row+1] + ry[row+2]) / 2)
+
+            # Header backgrounds
+            for (span, clr) in [((0, 1:3), (:green, 0.15)), ((0, 4:6), (:darkorange, 0.15))]
+                row, cols = span
+                x0, x1 = cx[first(cols)+1], cx[last(cols)+2]
+                y0, y1 = flip(ry[row+2]), flip(ry[row+1])
+                poly!(ax_t, Point2f[(x0,y0),(x1,y0),(x1,y1),(x0,y1)];
+                    color = clr, strokecolor = :lightgrey, strokewidth = 0.5)
+            end
+
+            poly!(ax_t, Point2f[(x0_2,y0_2),(x1_2,y0_2),(x1_2,y1_2),(x0_2,y1_2)];
+                    color = (:grey, 0.15), strokecolor = :lightgrey, strokewidth = 0.5)
+
+            # poly!(ax_t, Point2f[(x0,y0),(x1,y0),(x1,y1),(x0,y1)];
+            #         color = clr, strokecolor = :lightgrey, strokewidth = 0.5)
+
+            if !isnothing(model) || !isnothing(optstage)
+                row, cols = 0 , 7:7
+                clr = (:steelblue, 0.15)
+                x0, x1 = cx[first(cols)+1], cx[last(cols)+2]
+                y0, y1 = flip(ry[row+3]), flip(ry[row+1])
+                poly!(ax_t, Point2f[(x0,y0),(x1,y0),(x1,y1),(x0,y1)];
+                    color = clr, strokecolor = :lightgrey, strokewidth = 0.5)
+            end
+
+
+            # Grid lines
+            for (i, x) in enumerate(cx)
+                i > 1 && lines!(ax_t, [x, x], [0, sum(rh)-rh[end]]; color = :lightgrey, linewidth = 0.6)
+            end
+            lines!(ax_t, [cx[5], cx[5]], [0, sum(rh)]; color = :grey, linewidth = 1.2)
+            lines!(ax_t, [cx[8], cx[8]], [0, sum(rh)]; color = :grey, linewidth = 1.2)
+
+            # Row 0: Pre / Post headers
+            text!(ax_t, (cx[2]+cx[5])/2, cell_center_y(0);
+                text="Pre-Contingency",  align=(:center,:center), fontsize = font_table, color=:green,  font=:bold)
+            text!(ax_t, (cx[5]+cx[8])/2, cell_center_y(0);
+                text="Post-Contingency", align=(:center,:center), fontsize = font_table, color=:darkorange, font=:bold)
+            if !isnothing(model)
+                text!(ax_t, (cx[8]+cx[9])/2, cell_center_y(0);
+                    text="TR", align=(:center,:center), fontsize = font_table, color=:steelblue, font=:bold)
+            elseif (!isnothing(optstage))
+                text!(ax_t, (cx[8]+cx[9])/2, (cell_center_y(0)+cell_center_y(1))/2;
+                    text="inacc", align=(:center,:center), fontsize = font_table, color=:steelblue, font=:bold)
+            end
+
+            text!(ax_t, (x0_2+x1_2)/2, (cell_center_y(0));
+                    text="Max OP Risk", align=(:center,:center), fontsize = font_table, color=:steelblue, font=:bold)
+            text!(ax_t, (x0_2+x1_2)/2, (cell_center_y(2));
+                    text="System Risk", align=(:center,:center), fontsize = font_table, color=:steelblue, font=:bold)
+            # Row 1: column headers
+            for (col, lbl) in enumerate(["", "Max", "Mean", "N", "Max", "Mean", "N"])
+                text!(ax_t, cell_center_x(col-1), cell_center_y(1);
+                    text=lbl, align=(:center,:center), fontsize = font_table, color=:black, font=:bold)
+            end
+
+            # Rows 2-3: data
+            foreach(col -> reprow[col] isa AbstractFloat && isnan(reprow[col]) && (reprow[col] = 0.0), names(reprow))
+            XX = (
+                voltage  = (pre  = (max  = max(reprow."Vmin_Abs", reprow."Vmax_Abs"),
+                                    mean = (reprow."Vmin_N_M" * reprow."Vmin_N_N" + reprow."Vmax_N_M" * reprow."Vmax_N_N") / (reprow."Vmin_N_N" + reprow."Vmax_N_N"),
+                                    n    = sum(reprow."Vmin_N_N" + reprow."Vmax_N_N")),
+                            post = (max  = max(reprow."Vmin_C_Abs", reprow."Vmax_C_Abs"),
+                                    mean = (reprow."Vmin_C_M" * reprow."Vmin_C_N" + reprow."Vmax_C_M" * reprow."Vmax_C_N") / (reprow."Vmin_C_N" + reprow."Vmax_C_N"),
+                                    n    = sum(reprow."Vmin_C_N" + reprow."Vmax_C_N"))),
+                lineflow = (pre  = (max  = reprow."Smax_N",   mean = reprow."Smax_N_M", n = reprow."Smax_N_N"),
+                            post = (max  = reprow."Smax_C",   mean = reprow."Smax_C_M", n = reprow."Smax_C_N")),
+            )
+            table_rows = [
+                ("Voltage (p.u)",   [XX.voltage.pre.max,   XX.voltage.pre.mean,   XX.voltage.pre.n,
+                                    XX.voltage.post.max,  XX.voltage.post.mean,  XX.voltage.post.n]),
+                ("Line Flow (p.u)", [XX.lineflow.pre.max,  XX.lineflow.pre.mean,  XX.lineflow.pre.n,
+                                    XX.lineflow.post.max, XX.lineflow.post.mean, XX.lineflow.post.n]),
+            ]
+
+            for (r, (label, vals)) in enumerate(table_rows)
+                row = r + 1
+                text!(ax_t, cx[2] - 0.01, cell_center_y(row);
+                    text=label, align=(:right,:center), fontsize=font_table, color=:black, font=:bold)
+                for (col, val) in enumerate(vals)
+                    text!(ax_t, cell_center_x(col), cell_center_y(row);
+                        text  = col in [3,6] ? string(round(Int, val)) : @sprintf("%.3f", val),
+                        align = (:center, :center),
+                        fontsize = font_table)
+                end
+            end
+            if !isnothing(model)
+                text!(ax_t, cell_center_x(7), cell_center_y(1);text  = "size",align = (:center, :center),fontsize = font_table,color=:steelblue)
+                text!(ax_t, cell_center_x(7), cell_center_y(2);text  = @sprintf("%.3f", model[:TR][2]),align = (:center, :center),fontsize = font_table)
+                text!(ax_t, cell_center_x(7), cell_center_y(3);text  = @sprintf("%.3f", model[:TR][1]),align = (:center, :center),fontsize = font_table)
+            elseif (!isnothing(optstage))
+                optstage_tc=CartesianIndex.(optstage[1])
+                optstage_s=optstage[2]
+                inacc=0
+                iworst=0
+                for i in 1:length(tc_red)
+                        inacc_s= maximum(casreps[tc_red[i]][1, "VM"];init=0) .- Glob["I_relax"]
+                        if inacc_s>inacc
+                            inacc=inacc_s
+                        end
+                end
+                for i in tc_hist_red_1
+                        inacc_s= maximum(casreps[optstage_tc[i]][optstage_s[i], "VM"];init=0) .- Glob["I_relax"]
+                        if inacc_s>inacc
+                            inacc=inacc_s
+                            iworst=i
+                        end
+                end
+                text!(ax_t, cell_center_x(7), cell_center_y(2);text  = "-",align = (:center, :center),fontsize = font_table)
+                text!(ax_t, cell_center_x(7), cell_center_y(3);text  = @sprintf("%.3f", inacc),align = (:center, :center),fontsize = font_table)
+            end
+
+            # text!(ax_t, (x0_2+x1_2)/2, cell_center_y(1);text  = "value",align = (:center, :center),fontsize = font_table,color=:steelblue)
+            # text!(ax_t, (x0_2+x1_2)/2, cell_center_y(2);text  = "Max_OP_risk",align = (:center, :center),fontsize = font_table,color=:steelblue)
+            text!(ax_t, (x0_2+x1_2)/2, cell_center_y(1);text  = @sprintf("%.3e", Max_OP_Risk),align = (:center, :center),fontsize = font_table)
+            text!(ax_t, (x0_2+x1_2)/2, cell_center_y(3);text  = @sprintf("%.3e", Sys_Risk),align = (:center, :center),fontsize = font_table)
+
+            # colsize!(bottom, 1, Relative(0.5))
+            colsize!(bottom, 1, fig_w/2 * ( (isnothing(model) && isnothing(optstage)) ? 1 : (35/31)))
+
+        end
+
+        rowsize!(fig.layout, 2, fig_h_tot - fig_h)
+
+        # ── Legend (right) ────────────────────────────────────────
+        Legend(bottom[1, reprow === nothing ? (1:2) : 2],
+            [PolyElement(color = :lightgrey)],
+            ["NC — no cascade and no load shed"],
+            orientation = :vertical,
+            tellwidth   = false,
+            tellheight  = false,
+            valign      = :center,
+            halign      = :right
+        )
+
+        rowgap!(fig.layout, 1, 6)
+    # end
+    return fig,optstage_out
+end
+
+function findTR_P_coupled_opt(Glob, nTP, CascadeInfo,Base_TR_N, Base_TR_C, I2_0, Imaxlimit0, S_IP, V_0, Vmaxlimit0, Vminlimit0, S_VP, PBound, raw, cl, acc_V0)
+    # Glob, nTP, CascadeInfo,Base_TR_N, Base_TR_C, I2_0, Imaxlimit0, S_IP, V_0, Vmaxlimit0, Vminlimit0, S_VP, PBound, raw, cl, acc_V0=Glob, nTP, CascadeInfo, Base_TR_N,Base_TR_C,I2_0,Imaxlimit0,S_IP,V_0,Vmaxlimit0,Vminlimit0,deepcopy(S_VP),PBound,raw,cl,0.05
+    nBus     = raw["nBus"]
+    nPActBus = raw["nPActBus"]
+    nLine    = raw["nLine"]
+
+    Imaxlimit0_sqrt = sqrt.(Imaxlimit0)
+    zmax   = round(Int, length(Imaxlimit0) * P_con_percent)   + 1
+    zmax_V = round(Int, length(Vmaxlimit0) * Q_con_percent_coupled) + 1
+
+    acc_V = min(acc_V0,
+                max(maximum(V_0 .- Vmaxlimit0),
+                    maximum(.-(V_0 .- Vminlimit0))))
+
+    worst_vio      = maximum(I2_0 .- Imaxlimit0)          # squared current units
+    worst_vio_sqrt = max(maximum(sqrt.(I2_0) .- Imaxlimit0_sqrt),
+                         maximum(Base_TR_N), maximum(Base_TR_C))  # sqrt units
+    best_acc = deepcopy(worst_vio_sqrt)
+
+    DV_up = V_0 .- (acc_V .+ Vmaxlimit0)
+    DV_dn = V_0 .- (.-acc_V .+ Vminlimit0)
+
+    # ── output arrays ─────────────────────────────────────────────────────────
+    ovr_Sens_IP_up = zeros(nTP, nLine, cl)
+    ovr_Sens_IP_dn = zeros(nTP, nLine, cl)
+    ovr_Sens_VP_up = zeros(nTP, nBus,  cl)
+    ovr_Sens_VP_dn = zeros(nTP, nBus,  cl)
+
+    # ── scratch buffers ────────────────────────────────────────────────────────
+    scratches = make_VP_scratches(nBus, nPActBus, nLine, Threads.nthreads())
+
+    # ── pre-allocated violation metric buffers ─────────────────────────────────
+    nVol_I  = nTP * nLine * cl
+    nVol_V  = nTP * nBus  * cl
+    tmp_I2  = zeros(nTP, nLine, cl)
+    vals_IP = zeros(nVol_I)
+    vals_VP = zeros(2 * nVol_V)
+    Pinj_up     = zeros(nTP, nPActBus, cl)
+    Pinj_dn     = zeros(nTP, nPActBus, cl)
+    atrisk      = falses(size(I2_0))
+    Vmaxinrisk  = falses(size(V_0))
+    Vmininrisk  = falses(size(V_0))
+    Vmax_VP     = similar(V_0)
+    Vmin_VP     = similar(V_0)
+    Imax_IP     = similar(I2_0)
+    threshold_sq = similar(I2_0)
+
+    has_cascade = !isnothing(CascadeInfo) && !isempty(CascadeInfo)
+
+    cas_by_time = [Int[] for _ in 1:nTP]
+    cas_pos = zeros(Float64, 0, nPActBus)
+    cas_neg = similar(cas_pos)
+
+    cas_I2_0 = Float64[]
+    cas_limit = Float64[]
+    cas_dn = Float64[]
+    cas_residual = Float64[]
+
+    y_acc_cas = 0.0
+
+    if has_cascade
+        # One (time, contingency, stage) tuple per sensitivity row.
+        # Supports a vector or an N×1 array of tuples.
+        tcs = vec(CascadeInfo["tcs_Cascade"])
+        sens = CascadeInfo["SENS_Cascade"]
+
+        length(tcs) == size(sens, 1) || throw(DimensionMismatch(
+            "tcs_Cascade must contain one tuple per SENS_Cascade row"
+        ))
+
+        selected = if (!isnothing(CascadeInfo["optimal_tcs"]) && Glob["Risk_cascade"] != "false" )
+            findall(tc -> tc in CascadeInfo["optimal_tcs"], tcs)
+        else
+            findall(tc -> tc[3] == 1, tcs)
+        end
+
+        # selected = findall(tc -> tc[3] == 1, tcs)
+
+        selected_sens = sens[selected, 1:nPActBus]
+        cas_pos = max.(selected_sens, 0.0)
+        cas_neg = min.(selected_sens, 0.0)
+
+        line_indices = vec(CascadeInfo["line_Cascade"])[selected]
+        vm = vec(CascadeInfo["Vm_Cascade"])[selected]
+
+        cas_nominal_limit = Imaxlimit0_sqrt[line_indices]
+
+        cas_I2_0 = (vm .* cas_nominal_limit).^2
+        cas_limit = CascadeInfo["I_relax"] .* cas_nominal_limit
+
+        cas_dn = zeros(Float64, length(selected))
+        cas_residual = similar(cas_dn)
+
+        for (r, original_row) in enumerate(selected)
+            t = tcs[original_row][1]
+
+            1 <= t <= nTP || throw(ArgumentError(
+                "Cascade time index must be between 1 and nTP"
+            ))
+
+            push!(cas_by_time[t], r)
+        end
+    end
+
+    TR = 1.0; TR_min = 0.0; TR_max = 5.0; TR_best = 0.0
+    iter = 0; Iter_max = 10
+    z_acc = 0.0; y_acc = 0.0; ramp_acc = 0.0; z_acc_VP = 0.0; acc = 0.0
+    z = 0; y = 0; z_V = 0
+
+    report_TR = DataFrame(worst_vio_sqrt=0.0, acc=0.0, TR=0.0, z=0, y=0, z_acc=0.0, y_acc=0.0, y_acc_cas=0.0, ramp_acc=0.0, z_V=0, acc_VP=0.0)
+    deleteat!(report_TR, 1)
+
+    while TR_max - TR_min > 1e-7
+
+        if iter == 0
+            nothing
+        elseif iter >= Iter_max
+            TR = TR_best
+        # elseif (z_acc / max(y_acc, ramp_acc)) > 5 && y == 0
+        #     TR = max(TR / (z_acc / max(y_acc, 0.0)), 1.2 * TR_min)
+        else
+            TR = (TR_min + TR_max) / 2
+        end
+
+        Pinj_up .= min.( TR, PBound[1])
+        Pinj_dn .= max.(-TR, PBound[2])
+
+        Threads.@threads :static for t in 1:nTP
+            tid = Threads.threadid()
+            sc  = scratches[tid]
+            for c in 1:cl
+                up = @view Pinj_up[t, :, c]
+                dn = @view Pinj_dn[t, :, c]
+
+                compute_IP_rowsums!(
+                    view(ovr_Sens_IP_up, t, :, c),
+                    view(ovr_Sens_IP_dn, t, :, c),
+                    S_IP[t, c], up, dn, sc, nLine
+                )
+
+                compute_VP_rowsums!(
+                    view(ovr_Sens_VP_up, t, :, c),
+                    view(ovr_Sens_VP_dn, t, :, c),
+                    S_VP[t, c], up, dn,
+                    view(DV_up, t, :, c),
+                    view(DV_dn, t, :, c),
+                    sc, 0.99
+                )
+            end
+            if has_cascade
+                for r in cas_by_time[t]
+                    pos_sum = 0.0
+                    neg_sum = 0.0
+
+                    for j in 1:nPActBus
+                        pos_sum += cas_pos[r, j] * Pinj_dn[t, j, 1]
+                        neg_sum += cas_neg[r, j] * Pinj_up[t, j, 1]
+                    end
+
+                    cas_dn[r] = pos_sum + neg_sum
+                end
+            end
+        end
+
+        # ── violation metrics — all in-place ──────────────────────────────────
+        @. tmp_I2 = sqrt(max(0.0, I2_0 + ovr_Sens_IP_up)) - Imaxlimit0_sqrt
+        copyto!(vals_IP, tmp_I2)
+        k_IP  = min(nVol_I, zmax)
+        z_acc = partialsort!(vals_IP, 1:k_IP; rev=true)[end]
+
+        Vmax_VP .= V_0 .+ ovr_Sens_VP_up
+        Vmin_VP .= V_0 .+ ovr_Sens_VP_dn
+        @views vals_VP[1:nVol_V]           .= vec(Vmax_VP .- Vmaxlimit0)
+        @views vals_VP[nVol_V+1:2*nVol_V]  .= vec(.-(Vmin_VP .- Vminlimit0))
+        k_VP     = min(2 * nVol_V, zmax_V)
+        z_acc_VP = partialsort!(vals_VP, 1:k_VP; rev=true)[end]
+
+        Vmaxinrisk .= Vmax_VP .>= Vmaxlimit0 .+ max(z_acc_VP, 1e-4)
+        Vmininrisk .= Vmin_VP .<= Vminlimit0 .- max(z_acc_VP, 1e-4)
+
+        Imax_IP .= I2_0 .+ ovr_Sens_IP_up
+        atrisk  .= Imax_IP .>= (Imaxlimit0_sqrt .+ max(z_acc, 1e-4)).^2
+
+        @. tmp_I2 = sqrt(max(0.0, I2_0 + ovr_Sens_IP_dn / P_eff)) - Imaxlimit0_sqrt
+        ramp_acc = max( maximum(Base_TR_N), maximum(Base_TR_C))-TR
+        y_acc = max(maximum(tmp_I2), ramp_acc, -0.1)
+
+        if has_cascade
+            @. cas_residual =
+                sqrt(max(0.0, cas_I2_0 + cas_dn / P_eff)) - cas_limit
+
+            y_acc_cas = maximum(cas_residual; init=-1.0)
+        else
+            y_acc_cas = -1.0
+        end
+
+        acc   = max(z_acc, y_acc,y_acc_cas)
+
+        z   = sum(atrisk)
+        z_V = sum(Vmaxinrisk) + sum(Vmininrisk)
+
+        @. threshold_sq = (Imaxlimit0_sqrt + y_acc)^2
+        y = sum(I2_0 .+ ovr_Sens_IP_dn ./ P_eff .>= threshold_sq)
+
+        push!(report_TR, [worst_vio_sqrt, acc, TR, z, y, z_acc, y_acc, y_acc_cas, ramp_acc, z_V, z_acc_VP])
+
+        iter >= Iter_max && break
+
+        if acc <= best_acc && z_acc_VP <= acc_V
+            best_acc = max(-0.001, acc)
+            TR_best  = TR
+        end
+
+
+        #  z_acc_P >= worst_vio || z_acc_Q>= y_acc_Q || ((y_acc_P <= max(0,(1-(1/P_eff))*max(maximum(Vmax_VP), maximum(-Vmin_VP)))) && max(z_acc_Q, 0) >= y_acc_Q)
+
+        shrink_main = z_acc >= max(y_acc, y_acc_cas, -0.01) || max(y_acc,y_acc_cas) <= -0.001 || z_acc_VP >= acc_V
+
+
+        # shrink_cascade = !has_cascade || z_acc >= y_acc_cas || max(-0.001, y_acc_cas) <= -0.001
+        if shrink_main #&& shrink_cascade
+            TR_max = TR  # Reduce TR
+        else
+            TR_min = TR  # Increase TR
+        end
+
+        iter += 1
+        GC.gc(false)
+    end
+
+    display(report_TR)
+    Vmaxindex_P = findall(Vmaxinrisk)
+    Vminindex_P = findall(Vmininrisk)
+    println("Voltage at risk (P): ", length(Vmaxindex_P) + length(Vminindex_P))
+    println("Voltage acc left out: ", z_acc_VP)
+    ImaxIndex = findall(atrisk)
+
+    return TR, ImaxIndex, Vmaxindex_P, Vminindex_P,
+           max(0.0, z_acc), [Pinj_up, Pinj_dn],
+           worst_vio, worst_vio_sqrt,
+           report_TR, Vmax_VP, Vmin_VP, Imax_IP
+end
+
+function findTR_Q_coupled_opt(Glob, nTP, V_0, Vmax_VP, Vmin_VP, VmaxIndex_P, VminIndex_P,
+                           Vmaxlimit0, Vminlimit0, S_VQ, QBound, raw, cl;
+                           Improve_Rate=5)
+
+    nBus     = raw["nBus"]
+    nQActBus = raw["nQActBus"]
+    genbus = collect(Set(raw["Gen"].Bus))
+
+    z0   = sum((V_0 .- Vmaxlimit0) .>= 0) + sum((Vminlimit0 .- V_0) .>= 0)
+    zmax = round(Int, length(Vmaxlimit0) * Q_con_percent) + 1
+
+    worst_vio = max(maximum(V_0 .- Vmaxlimit0), maximum(.-(V_0 .- Vminlimit0)))
+    best_acc  = deepcopy(worst_vio)
+
+    DV_up = Vmax_VP .- Vmaxlimit0
+    DV_dn = Vmin_VP .- Vminlimit0
+
+    # ── output arrays ─────────────────────────────────────────────────────────
+    ovr_Sens_VQ_up     = zeros(nTP, nBus, cl)
+    ovr_Sens_VQ_dn     = zeros(nTP, nBus, cl)
+    ovr_Sens_VQ_up_org = zeros(nTP, nBus, cl)
+    ovr_Sens_VQ_dn_org = zeros(nTP, nBus, cl)
+
+    # ── scratch buffers ────────────────────────────────────────────────────────
+    scratches = make_VQ_scratches(nBus, nQActBus, Threads.nthreads())
+
+    # ── pre-allocated violation metric buffers ─────────────────────────────────
+    nVol    = nTP * nBus * cl
+    vals_VP = zeros(2 * nVol)
+    vals_VQ = zeros(2 * nVol)
+    V_max_VPQ = zeros(nTP, nBus, cl)
+    V_max_VQ  = zeros(nTP, nBus, cl)
+    V_min_VPQ = zeros(nTP, nBus, cl)
+    V_min_VQ  = zeros(nTP, nBus, cl)
+
+    Qinj_up    = zeros(nTP, nQActBus, cl)
+    Qinj_dn    = zeros(nTP, nQActBus, cl)
+    Vmaxinrisk = falses(size(V_0))
+    Vmininrisk = falses(size(V_0))
+
+    TR = 0.01; TR_min = 0.0; TR_max = 0.5; TR_best = 0.0
+    iter = 0; Itermax = 10
+    z_acc_P = 0.0; z_acc_Q = 0.0
+    y_acc_P = 0.0; y_acc_Q = 0.0
+    acc = 0.0; z = 0; y = 0
+
+    Vmaxlimit_new = Vmaxlimit0
+    Vminlimit_new = Vminlimit0
+
+    report_TR = DataFrame(worst_vio=0.0, acc=0.0, TR=0.0,
+                          z=z0, y=z0,
+                          z_acc_Q=0.0, y_acc_Q=0.0,
+                          z_acc_P=0.0, y_acc_P=0.0, plotdata=[0.0])
+    deleteat!(report_TR, 1)
+
+    while TR_max - TR_min > 1e-7
+
+        if iter == 0
+            nothing
+        elseif iter >= Itermax
+            TR = TR_best
+        else
+            TR = (TR_min + TR_max) / 2
+        end
+
+        Qinj_up .= min.( TR, QBound[1])
+        Qinj_dn .= max.(-TR, QBound[2])
+
+        Threads.@threads :static for t in 1:nTP
+            tid = Threads.threadid()
+            sc  = scratches[tid]
+            for c in 1:cl
+                compute_VQ_rowsums!(
+                    view(ovr_Sens_VQ_up,     t, :, c),
+                    view(ovr_Sens_VQ_dn,     t, :, c),
+                    view(ovr_Sens_VQ_up_org, t, :, c),
+                    view(ovr_Sens_VQ_dn_org, t, :, c),
+                    S_VQ[t, c],
+                    view(Qinj_up, t, :, c),
+                    view(Qinj_dn, t, :, c),
+                    view(DV_up,   t, :, c),
+                    view(DV_dn,   t, :, c),
+                    sc, 0.0, 10;
+                    genbus = genbus,
+                    genprox = genprox
+                )
+            end
+        end
+
+        # ── violation metrics — all in-place ──────────────────────────────────
+        @. V_max_VPQ = Vmax_VP + ovr_Sens_VQ_up - Vmaxlimit_new
+        @. V_max_VQ  = V_0     + ovr_Sens_VQ_up - Vmaxlimit_new
+        @. V_min_VPQ = -(Vmin_VP + ovr_Sens_VQ_dn - Vminlimit_new)
+        @. V_min_VQ  = -(V_0     + ovr_Sens_VQ_dn - Vminlimit_new)
+
+        V_max_VPQ[VmaxIndex_P] .= -10.0
+        V_max_VQ[VmaxIndex_P]  .= -10.0
+        V_min_VPQ[VminIndex_P] .= -10.0
+        V_min_VQ[VminIndex_P]  .= -10.0
+
+        @views vals_VP[1:nVol]       .= vec(V_max_VPQ)
+        @views vals_VP[nVol+1:2nVol] .= vec(V_min_VPQ)
+        k_VP    = min(2 * nVol, zmax)
+        z_acc_P = partialsort!(vals_VP, 1:k_VP; rev=true)[end]
+
+        @views vals_VQ[1:nVol]       .= vec(V_max_VQ)
+        @views vals_VQ[nVol+1:2nVol] .= vec(V_min_VQ)
+        k_VQ    = min(2 * nVol, zmax)
+        z_acc_Q = partialsort!(vals_VQ, 1:k_VQ; rev=true)[end]
+
+        y_acc_Q = max(maximum(V_0     .+ ovr_Sens_VQ_dn_org ./ Q_eff .- Vmaxlimit_new),
+                      maximum(.-(V_0  .+ ovr_Sens_VQ_up_org ./ Q_eff .- Vminlimit_new)))
+        y_acc_P = max(maximum(Vmax_VP .+ ovr_Sens_VQ_dn_org ./ Q_eff .- Vmaxlimit_new),
+                      maximum(.-(Vmin_VP .+ ovr_Sens_VQ_up_org ./ Q_eff .- Vminlimit_new)))
+
+        acc = max(0.0, y_acc_Q)
+
+        Vmaxinrisk .= (Vmax_VP .+ ovr_Sens_VQ_up) .>= Vmaxlimit_new .+ max(z_acc_P, 1e-5)
+        Vmininrisk .= (Vmin_VP .+ ovr_Sens_VQ_dn) .<= Vminlimit_new .- max(z_acc_P, 1e-5)
+
+        z = sum(Vmaxinrisk) + sum(Vmininrisk)
+        y = sum((Vmax_VP .+ ovr_Sens_VQ_dn ./ Q_eff) .> Vmaxlimit_new .+ max(y_acc_P, 0)) +
+            sum((Vmin_VP .+ ovr_Sens_VQ_up ./ Q_eff) .< Vminlimit_new .- max(y_acc_P, 0))
+
+        push!(report_TR, [worst_vio, acc, TR, z, y, z_acc_Q, y_acc_Q, z_acc_P, y_acc_P, 0.0])
+
+        iter >= Itermax && break
+
+        if acc <= best_acc && z_acc_Q <= y_acc_Q && z_acc_P <= worst_vio
+            best_acc = acc
+            TR_best  = TR
+        end
+
+        # if z_acc_P >= worst_vio || y_acc_P<= max(z_acc_P,-0.002) || ((y_acc_P <= max(0.005,maximum(Vmax_VP), maximum(-Vmin_VP)) - 0.005) && max(z_acc_Q, -0.002) >= y_acc_Q)
+        if z_acc_P >= worst_vio || z_acc_Q>= y_acc_Q || ((y_acc_P <= max(0,(1-(1/P_eff))*max(maximum(Vmax_VP), maximum(-Vmin_VP)))) && max(z_acc_Q, 0) >= y_acc_Q)
+            TR_max = TR
+        else
+            TR_min = TR
+        end
+
+        iter += 1
+        GC.gc(false)
+    end
+
+    VmaxIndex = findall(Vmaxinrisk)
+    VminIndex = findall(Vmininrisk)
+    display(report_TR)
+    return TR, VmaxIndex, VminIndex, max(0.0, z_acc_Q),[Qinj_up, Qinj_dn], worst_vio, report_TR
+end
+
+
+struct VPScratch
+    up_max_V   ::Matrix{Float64}
+    dn_max_V   ::Matrix{Float64}
+    VP_up_buf  ::Matrix{Float64}
+    VP_dn_buf  ::Matrix{Float64}
+    VP_up1_buf ::BitMatrix
+    VP_dn1_buf ::BitMatrix
+    S_VP1_buf  ::BitMatrix
+    up_max_I   ::Matrix{Float64}
+    dn_max_I   ::Matrix{Float64}
+    val_buf    ::Vector{Float64}
+end
+
+function make_VP_scratches(nBus::Int, nPActBus::Int, nLine::Int, nthreads::Int)
+    [VPScratch(
+        zeros(nBus,  nPActBus), zeros(nBus,  nPActBus),
+        zeros(nBus,  nPActBus), zeros(nBus,  nPActBus),
+        falses(nBus, nPActBus), falses(nBus, nPActBus),
+        falses(nBus, nPActBus),
+        zeros(nLine, nPActBus), zeros(nLine, nPActBus),
+        zeros(Float64, max(nBus, nLine))
+    ) for _ in 1:nthreads]
+end
+
+struct VQScratch
+    up_max_V   ::Matrix{Float64}
+    dn_max_V   ::Matrix{Float64}
+    VQ_up_buf  ::Matrix{Float64}
+    VQ_dn_buf  ::Matrix{Float64}
+    VQ_up1_buf ::BitMatrix
+    VQ_dn1_buf ::BitMatrix
+    S_VQ1_buf  ::BitMatrix
+    val_buf    ::Vector{Float64}
+end
+
+function make_VQ_scratches(nBus::Int, nQActBus::Int, nthreads::Int)
+    [VQScratch(
+        zeros(nBus,  nQActBus), zeros(nBus,  nQActBus),
+        zeros(nBus,  nQActBus), zeros(nBus,  nQActBus),
+        falses(nBus, nQActBus), falses(nBus, nQActBus),
+        falses(nBus, nQActBus),
+        zeros(Float64, nBus)
+    ) for _ in 1:nthreads]
+end
+
+function keep_K_percent_new_2D!(B::BitMatrix, S::AbstractMatrix{T},
+                                  percent::Float64=0.8) where T
+    @inbounds for j in axes(S, 2)
+        col_max = typemin(T)
+        for i in axes(S, 1)
+            v = S[i, j]
+            col_max = v > col_max ? v : col_max
+        end
+        thmax = col_max * percent
+        for i in axes(S, 1)
+            B[i, j] = (S[i, j] >= thmax)
+        end
+    end
+    return B
+end
+
+function keep_K_percent_twoside_2D!(B::BitMatrix, S::AbstractMatrix{T},
+                                     percent::Float64=0.8) where T
+    @inbounds for j in axes(S, 2)
+        col_max = typemin(T)
+        col_min = typemax(T)
+        for i in axes(S, 1)
+            v = S[i, j]
+            col_max = v > col_max ? v : col_max
+            col_min = v < col_min ? v : col_min
+        end
+        thmax = col_max * percent
+        thmin = col_min * percent
+        for i in axes(S, 1)
+            v = S[i, j]
+            B[i, j] = (v >= thmax) | (v <= thmin)
+        end
+    end
+    return B
+end
+
+# val_buf is thread-owned — zero heap allocation
+function keep_top_2D!(B::BitMatrix, S::AbstractMatrix{T},
+                       K::Int, val_buf::Vector{Float64}) where T
+    nBus, nActBus = size(S)
+    K_eff = min(K, nBus)
+    for j in 1:nActBus
+        @inbounds for i in 1:nBus
+            val_buf[i] = S[i, j]
+        end
+        threshold = partialsort!(
+            @view(val_buf[1:nBus]), K_eff; rev=true
+        )
+        @inbounds for i in 1:nBus
+            B[i, j] |= (S[i, j] >= threshold)
+        end
+    end
+    return B
+end
+
+function compute_IP_rowsums!(
+        up_out ::AbstractVector,
+        dn_out ::AbstractVector,
+        S_IP_tc,
+        up_vec ::AbstractVector,
+        dn_vec ::AbstractVector,
+        sc     ::VPScratch,
+        nLine  ::Int
+)
+    nPActBus = size(S_IP_tc, 2)
+    S_lines  = @view S_IP_tc[1:nLine, :]   # ignore transformer rows silently
+
+    for j in 1:nPActBus, i in 1:nLine
+        s = S_lines[i, j]
+        if s > 0
+            sc.up_max_I[i,j] = s * up_vec[j]
+            sc.dn_max_I[i,j] = s * dn_vec[j]
+        else
+            sc.up_max_I[i,j] = s * dn_vec[j]
+            sc.dn_max_I[i,j] = s * up_vec[j]
+        end
+    end
+
+    sum!(reshape(up_out, nLine, 1), sc.up_max_I)
+    sum!(reshape(dn_out, nLine, 1), sc.dn_max_I)
+    up_out .+= 1e-6
+    dn_out .+= 1e-6
+    return nothing
+end
+
+function compute_VP_rowsums!(
+        up_out      ::AbstractVector,
+        dn_out      ::AbstractVector,
+        S_VP_tc,
+        up_vec      ::AbstractVector,
+        dn_vec      ::AbstractVector,
+        DV_up_col   ::AbstractVector,
+        DV_dn_col   ::AbstractVector,
+        sc          ::VPScratch,
+        kp_threshold::Float64 = 0.99
+)
+    nBus, nPActBus = size(S_VP_tc)
+
+    for j in 1:nPActBus, i in 1:nBus
+        s = S_VP_tc[i, j]
+        if s > 0
+            sc.up_max_V[i,j] = s * up_vec[j]
+            sc.dn_max_V[i,j] = s * dn_vec[j]
+        else
+            sc.up_max_V[i,j] = s * dn_vec[j]
+            sc.dn_max_V[i,j] = s * up_vec[j]
+        end
+    end
+
+    for j in 1:nPActBus, i in 1:nBus
+        sc.VP_up_buf[i,j] =  sc.up_max_V[i,j] + DV_up_col[i]
+        sc.VP_dn_buf[i,j] = -sc.dn_max_V[i,j] - DV_dn_col[i]
+    end
+
+    fill!(sc.VP_up1_buf, false)
+    fill!(sc.VP_dn1_buf, false)
+    keep_K_percent_new_2D!(sc.VP_up1_buf, sc.VP_up_buf, kp_threshold)
+    keep_K_percent_new_2D!(sc.VP_dn1_buf, sc.VP_dn_buf, kp_threshold)
+    keep_K_percent_twoside_2D!(sc.S_VP1_buf, S_VP_tc, kp_threshold)
+
+    for j in 1:nPActBus, i in 1:nBus
+        mask_up = sc.VP_up1_buf[i,j] | sc.S_VP1_buf[i,j]
+        mask_dn = sc.VP_dn1_buf[i,j] | sc.S_VP1_buf[i,j]
+        sc.VP_up_buf[i,j] = ifelse(mask_up, sc.up_max_V[i,j], 0.0)
+        sc.VP_dn_buf[i,j] = ifelse(mask_dn, sc.dn_max_V[i,j], 0.0)
+    end
+    sum!(reshape(up_out, nBus, 1), sc.VP_up_buf)
+    sum!(reshape(dn_out, nBus, 1), sc.VP_dn_buf)
+    up_out .+= 1e-6
+    dn_out .+= 1e-6
+    return nothing
+end
+
+function compute_VQ_rowsums!(
+        up_out      ::AbstractVector,
+        dn_out      ::AbstractVector,
+        up_org      ::AbstractVector,
+        dn_org      ::AbstractVector,
+        S_VQ_tc,
+        up_vec      ::AbstractVector,
+        dn_vec      ::AbstractVector,
+        DV_up_col   ::AbstractVector,
+        DV_dn_col   ::AbstractVector,
+        sc          ::VQScratch,
+        kp_threshold::Float64 = 0.0,
+        top_K       ::Int     = 10;
+        genbus,
+        genprox::Int
+)
+    nBus, nQActBus = size(S_VQ_tc)
+
+    for j in 1:nQActBus, i in 1:nBus
+        s = S_VQ_tc[i, j]
+        if s > 0
+            sc.up_max_V[i,j] = s * up_vec[j]
+            sc.dn_max_V[i,j] = s * dn_vec[j]
+        else
+            sc.up_max_V[i,j] = s * dn_vec[j]
+            sc.dn_max_V[i,j] = s * up_vec[j]
+        end
+    end
+
+    sum!(reshape(up_org, nBus, 1), sc.up_max_V)
+    sum!(reshape(dn_org, nBus, 1), sc.dn_max_V)
+    up_org .+= 1e-6
+    dn_org .+= 1e-6
+
+    for j in 1:nQActBus, i in 1:nBus
+        sc.VQ_up_buf[i,j] =  sc.up_max_V[i,j] + DV_up_col[i]
+        sc.VQ_dn_buf[i,j] = -sc.dn_max_V[i,j] - DV_dn_col[i]
+    end
+
+    fill!(sc.VQ_up1_buf, false)
+    fill!(sc.VQ_dn1_buf, false)
+    keep_K_percent_new_2D!(sc.VQ_up1_buf, sc.VQ_up_buf, kp_threshold)
+    keep_K_percent_new_2D!(sc.VQ_dn1_buf, sc.VQ_dn_buf, kp_threshold)
+    # keep_top_2D!(sc.VQ_up1_buf, sc.up_max_V, top_K, sc.val_buf)
+    # keep_top_2D!(sc.VQ_dn1_buf, -sc.dn_max_V, top_K, sc.val_buf)
+
+    keep_top_2D!(sc.VQ_up1_buf, sc.VQ_up_buf, top_K, sc.val_buf)
+    keep_top_2D!(sc.VQ_dn1_buf, sc.VQ_dn_buf, top_K, sc.val_buf)
+    # keep_top_row_gen_2D!(sc.VQ_up1_buf, sc.VQ_up_buf, genbus, genprox)
+    # keep_top_row_gen_2D!(sc.VQ_dn1_buf, sc.VQ_dn_buf, genbus, genprox)
+    keep_K_percent_twoside_2D!(sc.S_VQ1_buf, S_VQ_tc, 0.9)
+
+    for j in 1:nQActBus, i in 1:nBus
+        mask_up = sc.VQ_up1_buf[i,j] | sc.S_VQ1_buf[i,j]
+        mask_dn = sc.VQ_dn1_buf[i,j] | sc.S_VQ1_buf[i,j]
+        sc.VQ_up_buf[i,j] = ifelse(mask_up, sc.up_max_V[i,j], 0.0)
+        sc.VQ_dn_buf[i,j] = ifelse(mask_dn, sc.dn_max_V[i,j], 0.0)
+    end
+    sum!(reshape(up_out, nBus, 1), sc.VQ_up_buf)
+    sum!(reshape(dn_out, nBus, 1), sc.VQ_dn_buf)
+    up_out .+= 1e-6
+    dn_out .+= 1e-6
+    return nothing
+end
+
+function keep_top_row_gen_2D!(
+    B::BitMatrix,
+    A::AbstractMatrix,
+    genbus,
+    k::Int
+)
+    k_eff = min(k, size(A, 2))
+    k_eff <= 0 && return B
+
+    for i in genbus
+        row = @view A[i, :]
+        keep = partialsortperm(row, 1:k_eff; rev=true)
+
+        for j in keep
+            B[i, j] = true
+        end
+    end
+
+    return B
 end

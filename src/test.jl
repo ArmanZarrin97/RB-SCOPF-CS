@@ -1,290 +1,493 @@
-# include("Funcs/IO/Packages.jl") # load necessary packages
-# include("Funcs/IO/utils.jl") # load general functions
-# include("Assets/L-MPSCOPF.jl") # load the multi-period security-constrained optimal power flow model
-# #JuMP: Modeling Optimization Problem #Ipopt: Optimization solver package # OdsIO: Input & output for .ods files # DataFrames: !!
-# include("Assets/ACPF.jl") # load power flow model
-# include("Assets/linearization.jl") # load power flow model
-# include("Funcs/IO/Result_generation.jl") # save MPSCOPF results in Output file
-# include("Assets/L-Problems.jl") # load the different models of problems
+function findTR_P_coupled2(Glob, nTP,CascadeInfo, Base_TR_N,Base_TR_C,I2_0,Imaxlimit0,S_IP,V_0,Vmaxlimit0,Vminlimit0,S_VP,PBound,raw,cl,acc_V0)
 
-function Calculate_I(OP,raw)
-    V=OP["V"];θ=OP["θ"];df=raw["Line"]
-    I2=zeros(nTP,raw["nLine"])
-    for t=1:nTP,n=1:raw["nLine"]
-        I2[t,n]=(df."g (pu)"[n]^2 + df."b (pu)"[n]^2)*(V[t,df."From"[n]]^2+V[t,df."To"[n]]^2-2*V[t,df."From"[n]]*V[t,df."To"[n]]*cos(θ[t,df."From"[n]]-θ[t,df."To"[n]]))
+    # acc_V0=0.05
+
+    Imaxlimit0_sqrt=sqrt.(Imaxlimit0)
+    z0=0
+    zmax=round(size(Imaxlimit0)[1]*size(Imaxlimit0)[2]*size(Imaxlimit0)[3]*P_con_percent)+1
+    zmax_V=round(size(Vmaxlimit0)[1]*size(Vmaxlimit0)[2]*size(Vmaxlimit0)[3]*Q_con_percent_coupled)+1
+    y=0
+    z=0
+    if Glob["obj_imp"]
+        TR=max(0.5, Glob["TR_before"][1]);p_coef=P_eff
+    else
+        TR=0.01;;p_coef=1
     end
-    return I2
-end
-function Calculate_PQflow(OP,raw)
-    V=OP["V"];θ=OP["θ"];df=raw["Line"]
-    Pnm,Qnm,Pmn,Qmn=zeros(nTP,raw["nLine"]),zeros(nTP,raw["nLine"]),zeros(nTP,raw["nLine"]),zeros(nTP,raw["nLine"])
-    for t=1:nTP,n=1:raw["nLine"]
-        Pnm[t,n]=   (   df."g_sh (pu)"[n]/2+df."g (pu)"[n])*(V[t,df."From"[n]]^2)   -df."g (pu)"[n]*(V[t,df."From"[n]]*V[t,df."To"[n]]*cos(θ[t,df."From"[n]]-θ[t,df."To"[n]]))      -df."b (pu)"[n]*(V[t,df."From"[n]]*V[t,df."To"[n]]*sin(θ[t,df."From"[n]]-θ[t,df."To"[n]]))
-        Qnm[t,n]=   (  -df."b_sh (pu)"[n]/2-df."b (pu)"[n])*(V[t,df."From"[n]]^2)   +df."b (pu)"[n]*(V[t,df."From"[n]]*V[t,df."To"[n]]*cos(θ[t,df."From"[n]]-θ[t,df."To"[n]]))      -df."g (pu)"[n]*(V[t,df."From"[n]]*V[t,df."To"[n]]*sin(θ[t,df."From"[n]]-θ[t,df."To"[n]]))
-        Pmn[t,n]=   (   df."g_sh (pu)"[n]/2+df."g (pu)"[n])*(V[t,df."To"[n]]^2)     -df."g (pu)"[n]*(V[t,df."To"[n]]*V[t,df."From"[n]]*cos(θ[t,df."To"[n]]-θ[t,df."From"[n]]))      +df."b (pu)"[n]*(V[t,df."From"[n]]*V[t,df."To"[n]]*sin(θ[t,df."From"[n]]-θ[t,df."To"[n]]))
-        Qmn[t,n]=   (  -df."b_sh (pu)"[n]/2-df."b (pu)"[n])*(V[t,df."To"[n]]^2)     +df."b (pu)"[n]*(V[t,df."To"[n]]*V[t,df."From"[n]]*cos(θ[t,df."To"[n]]-θ[t,df."From"[n]]))      +df."g (pu)"[n]*(V[t,df."From"[n]]*V[t,df."To"[n]]*sin(θ[t,df."From"[n]]-θ[t,df."To"[n]]))
+    TR_min=0.01
+    TR_max=TR_min+10.0;
+    V0_length= length(V_0)
+    acc_V=max(0.05,min(acc_V0,max(maximum(V_0-Vmaxlimit0),maximum(-(V_0-Vminlimit0)))))
+    iter=0
+    Iter_max=10
+    # atrisk=0
+    atrisk= falses(size(I2_0));
+    # Vmaxinrisk=0;Vmininrisk=0;
+    Vmaxinrisk=falses(size(V_0));Vmininrisk=falses(size(V_0));
+    # Vmax_VP=0;Vmin_VP=0;Imax_IP=0;
+    Vmax_VP=zeros(size(V_0));Vmin_VP=zeros(size(V_0)); Imax_IP=zeros(size(I2_0));
+    violated=0
+    worst_vio=maximum(I2_0-Imaxlimit0)
+    worst_vio_sqrt=max.(maximum(sqrt.(I2_0)-Imaxlimit0_sqrt) ,maximum(Base_TR_N),maximum(Base_TR_C))#, maximum(CascadeInfo["diffVm"])
+    best_acc=deepcopy(worst_vio_sqrt)
+    best_acc_cas=1000
+    acc=0
+    z_acc_VP=0
+    adj_acc=0
+    target_acc_sqrt=0
+    # Imaxlimit_new=deepcopy(Imaxlimit0)
+    genbus=raw["Gen"].Bus
+    genbus_s = Set(genbus)  # O(1) lookup
+    allbus_s= Set(1:raw["nBus"])
+    ovr_Sens_IP_up = zeros(nTP, raw["nLine"], cl);ovr_Sens_IP_dn = zeros(nTP, raw["nLine"], cl)
+    ovr_Sens_VP_up = zeros(nTP, raw["nBus"], cl);ovr_Sens_VP_dn = zeros(nTP, raw["nBus"], cl)
+    nBus      = raw["nBus"]
+    nPActBus  = raw["nPActBus"]
+    if !isempty(CascadeInfo)
+        tCascade=CascadeInfo["tcs_Cascade"][:,1]
+        ovr_Sens_IP_up_cas= zeros(Float64, length(tCascade))
+        ovr_Sens_IP_dn_cas= zeros(Float64, length(tCascade))
+        vals_IP_cas= zeros(Float64, length(tCascade))
+        S_IP_cas_pos= max.(CascadeInfo["SENS_Cascade"][:,1:nPActBus], 0.0)
+        S_IP_cas_neg= min.(CascadeInfo["SENS_Cascade"][:,1:nPActBus], 0.0)
+    else
     end
-    return Pnm,Qnm,Pmn,Qmn
-end
+    # Allocate once, contiguous in memory
+    ovr_Sens_VP_upmat = zeros(Float64, nBus, nPActBus, nTP, cl)
+    ovr_Sens_VP_dnmat = zeros(Float64, nBus, nPActBus, nTP, cl)
+    ovr_Sens_IP_upmat = zeros(Float64, raw["nLine"]+raw["nTrans"], nPActBus, nTP, cl)
+    ovr_Sens_IP_dnmat = zeros(Float64, raw["nLine"]+raw["nTrans"], nPActBus, nTP, cl)
 
 
-Runcode=(2,3)
+    VP_up             = similar(ovr_Sens_VP_upmat)
+    VP_dn             = similar(ovr_Sens_VP_upmat)
+    # upelem            = similar(ovr_Sens_VP_upmat)
+    # dnelem            = similar(ovr_Sens_VP_upmat)
+    VP_up1      =falses(nBus, nPActBus, nTP, cl)
+    VP_dn1      =similar(VP_up1)
+    vals_IP= zeros(Float64, length(I2_0))
+    
+    vals_VP= zeros(Float64, 2* length(V_0))
 
-OP_init0=Initialize(Linearization_INIT[Runcode[1]],init_out,init_model,DA_out,DA_model)
-Ncost0,Vio_Sum_N,OP_NValid,Vio_general_N=PF_Valid_N(OP_init0,Runcode)
-if Problem_Type=="SCOPF"
-    AVG_C_cost0,Vio_Sum_C0,OP_init,Vio_general_C0=PF_Valid_C(OP_NValid,Runcode)
-else
-    OP_init=OP_NValid
-end
-
-# Head=["Change";"Change p.u.";"-";["ΔQinj$i" for i in 1:size(SysData["Gen"],1)];["Δθ$i" for i in 1:size(SysData["Bus"],1)];["ΔPinj$i" for i in 1:size(SysData["Gen"],1)];["ΔV$i" for i in 1:size(SysData["Bus"],1)];["ΔI2$i" for i in 1:size(SysData["Line"],1)];["ΔPnm$i" for i in 1:size(SysData["Line"],1)];["ΔQnm$i" for i in 1:size(SysData["Line"],1)];["ΔPmn$i" for i in 1:size(SysData["Line"],1)];["ΔQmn$i" for i in 1:size(SysData["Line"],1)]]
-Head=["Change";"Change p.u.";"-";["ΔQinj$i" for i in 1:size(SysData["Gen"],1)];["Δθ$i" for i in 1:size(SysData["Bus"],1)];["ΔPinj$i" for i in 1:size(SysData["Gen"],1)];["ΔV$i" for i in 1:size(SysData["Bus"],1)];["ΔI2$i" for i in 1:size(SysData["Line"],1)]]
-
-global Sensivity_errror=DataFrame(repeat([[]],size(Head,1)), Head)
-
-# OP_init=OP_NValid
-Ptype_="DA";init_="Zero";
-global nTP=nTL;
-global TD=Td;
-raw,initraw,profraw= try Data_Reader(;Ptype=Ptype_ , init=init_)
-catch e
-    @warn "Problem with running Data_Reader function"
-    rethrow(e)
-end
-ctdall=ctdMaker(raw)
-raw["Bus"][!,:PActive].=0;raw["Bus"][!,:QActive].=0
-raw["PActBus"]= filter(x-> !isempty(x."ess")||!isempty(x."res")||!isempty(x."gen")||!isempty(x."fl"),ctdall)[!,:nbus]
-raw["QActBus"]= filter(x-> !isempty(x."shunt") || !isempty(x."gen")||!isempty(x."fl"),ctdall)[!,:nbus]
-raw["nPActBus"]=size(raw["PActBus"])[1];raw["nQActBus"]=size(raw["QActBus"])[1]
-raw["Bus"][raw["PActBus"],"PActive"].=1;raw["Bus"][raw["QActBus"],"QActive"].=1
-Lininit=OP_init
-
-
-
-# Lininit["NSens"][1][5,:].=0
-# Lininit["CSens"][1][5,:].=0
-SensModel=Cal_SENS_Simple(Lininit,nTP,raw;C="N")
-SensModel_old,Pa_IV_old,Pa_Iθ_old=Cal_SENS_Simple_old(Lininit,nTP,raw;C="N")
-# SensModel_old=Cal_SENS(Lininit,nTP,raw;C="N")
-
-# SensModel["S_θQ"][1,1]
-
-# SensModel_old["S_θQ"][:,3:5,:,:]
-
-# Pa_Iθ[1]
-# Pa_Iθ_old[:,:,1,1]
-
-# key="S_PsP"
-# sizeof(SensModel[key])
-# SensModel[key]
-# SENSDict=deepcopy(SensModel)
-# threshold=0.1
-# SENSDict[key] .= ifelse.(abs.(SENSDict[key]) .> threshold, SENSDict[key], 0.0)
-# sizeof(SENSDict[key])
-# sparse(SENSDict[key][:,:,1,1])
-# sparse(SensModel[key][:,:,1,1])
-
-namerow=Dict("P"=>"P5+,P3-", "Q"=>"Q5+,Q3-")
-for change in [1 0.1 0.01], Var in ["P","Q"]
-    DeltaQ=zeros(5);DeltaP=zeros(5);
-    if Var=="P" DeltaP[5]=change;DeltaP[3]=-change
-    elseif Var=="Q" DeltaQ[5]=change;DeltaQ[3]=-change end
-    DeltaQA=DeltaQ[raw["QActBus"]]
-    DeltaPA=DeltaP[raw["PActBus"]]
-    # DeltaQA=DeltaQ
-    # DeltaPA=DeltaP
-    expectedΔQG=DeltaQ[3:5]
-    expectedΔPG=DeltaP[3:5]
-    if Var=="P"
-        expectedΔV=(SensModel["S_VP"][1,1]*DeltaPA)'
-        expectedΔθ=(SensModel["S_θP"][1,1]*DeltaPA)'
-        expectedΔI2=(SensModel["S_IP"][1,1]*DeltaPA)'
-        # expectedΔV=(SensModel_old["S_VP"][:,:,1,1]*DeltaPA)'
-        # expectedΔθ=(SensModel_old["S_θP"][:,:,1,1]*DeltaPA)'
-        # expectedΔI2=(SensModel_old["S_IP"][:,:,1,1]*DeltaPA)'
-        # expectedΔPnm=(SensModel["S_PsP"][1,1]*DeltaP)'
-        # expectedΔQnm=(SensModel["S_QsP"][1,1]*DeltaP)'
-        # expectedΔPmn=(SensModel["S_PrP"][1,1]*DeltaP)'
-        # expectedΔQmn=(SensModel["S_QrP"][1,1]*DeltaP)'
-    elseif Var=="Q"
-        expectedΔV=(SensModel["S_VQ"][1,1]*DeltaQA)'
-        expectedΔθ=(SensModel["S_θQ"][1,1]*DeltaQA)'
-        expectedΔI2=(SensModel["S_IQ"][1,1]*DeltaQA)'
-        # expectedΔV=(SensModel_old["S_VQ"][:,:,1,1]*DeltaQA)'
-        # expectedΔθ=(SensModel_old["S_θQ"][:,:,1,1]*DeltaQA)'
-        # expectedΔI2=(SensModel_old["S_IQ"][:,:,1,1]*DeltaQA)'
-        # expectedΔPnm=(SensModel["S_PsQ"][1,1]*DeltaQ)'
-        # expectedΔQnm=(SensModel["S_QsQ"][1,1]*DeltaQ)'
-        # expectedΔPmn=(SensModel["S_PrQ"][1,1]*DeltaQ)'
-        # expectedΔQmn=(SensModel["S_QrQ"][1,1]*DeltaQ)'
-    end
-    # Vestimated=OP_init["V"].+expectedΔV# θestimated=OP_init["θ"].+expectedΔθ# PGestimated=OP_init["PG"].+Delta[3:end]# QGestimated=OP_init["QG"]
-
-    NewOP=deepcopy(OP_init)
-    if Var=="P" NewOP["PG"][3]+=change;NewOP["PG"][1]-=change end
-    NewOP["V"]+=expectedΔV
-    Ncost,Vio_Sum,NewOP_V,Vio_general,convergence_indicator=PF_Valid_N(NewOP,Runcode)
-    realΔV=NewOP_V["V"]-OP_init["V"]
-    realΔθ=NewOP_V["θ"]-OP_init["θ"]
-    realΔQG=NewOP_V["QG"]-OP_init["QG"]
-    realΔPG=NewOP_V["PG"]-OP_init["PG"]
-    realΔI2=Calculate_I(NewOP_V,raw)-Calculate_I(OP_init,raw)
-    # realΔPnm,realΔQnm,realΔPmn,realΔQmn=Calculate_PQflow(NewOP_V,raw).-Calculate_PQflow(OP_init,raw)
-
-    # errorθ=(θnew-θestimated).^2# meanerrorθ=sqrt.(sum(errorθ))/raw["nBus"]# maxerrorθ=sqrt(maximum(errorθ))
-    # errorQG=(NewOP_V["QG"].-OP_init["QG"]).^2# meanerrorQG=sqrt.(sum(errorQG))/raw["nGen"]# maxerrorQG=sqrt(maximum(errorQG))
-    # newrow=[namerow[Var] change "real" realΔQG realΔθ realΔPG realΔV realΔI2 realΔPnm realΔQnm realΔPmn realΔQmn]
-    newrow=[namerow[Var] change "real" realΔQG realΔθ realΔPG realΔV realΔI2]
-    push!(Sensivity_errror,newrow[1,:])
-    # newrow=[namerow[Var] change "expected" expectedΔQG' expectedΔθ expectedΔPG' expectedΔV expectedΔI2 expectedΔPnm expectedΔQnm expectedΔPmn expectedΔQmn]
-    newrow=[namerow[Var] change "expected" expectedΔQG' expectedΔθ expectedΔPG' expectedΔV expectedΔI2]
-    push!(Sensivity_errror,newrow[1,:])
-end
-ods_write(Path*"../Result/Sensivities Error",Dict(("General",2,1)=>Sensivity_errror))
-
-
-# ### First check active power sensitivity
-# change=1
-# Delta=zeros(5);Delta[5]=change;Delta[4]=-change
-
-# expectedV=(SensModel["S_VQ"][:,:,1,1]*Delta)'
-# expectedθ=(SensModel["S_θQ"][:,:,1,1]*Delta)'
-# NewOP=deepcopy(OP_init)
-# NewOP["PG"][3]+=change
-# NewOP["PG"][2]-=change
-# NewOP["V"]+=expectedV
-# Ncost,Vio_Sum,NewOP_V,Vio_general,convergence_indicator=PF_Valid_N(NewOP)
-# NewOP_V["V"].-OP_init["V"]
-# NewOP_V["θ"].-OP_init["θ"]
-# NewOP_V["QG"].-OP_init["QG"]
-
-# ### Second check reactive power sensitivity
-# change=1
-# Delta=zeros(5);Delta[3]=change;Delta[4]=-Delta[3]
-
-# expectedV=(SensModel["S_VQ"][:,:,1,1]*Delta)'
-# expectedθ=(SensModel["S_θQ"][:,:,1,1]*Delta)'
-# NewOP=deepcopy(OP_init)
-# NewOP["V"]+=expectedV
-# Ncost,Vio_Sum,NewOP_V,Vio_general,convergence_indicator=PF_Valid_N(NewOP)
-# NewOP_V["V"].-OP_init["V"]
-# NewOP_V["θ"].-OP_init["θ"]
-# NewOP_V["QG"].-OP_init["QG"]
-
-
-function Cal_SENS_Simple_old(Lininit::Dict{String,Array{Union{Float64,Array{Float64}}}},nTP::Int64,raw::Dict{String, Any};C::String="N")
-    nbus::Int64=raw["nBus"];nline::Int64=raw["nLine"];ntrans::Int64=raw["nTrans"];
-    if C=="N"
-        CC=1;
-        V_0::Array{Float64}=Lininit["V"];θ_0::Array{Float64}=Lininit["θ"];
-        exc=[0]
-        SENS::Array{Array{Float64}}=Lininit["NSens"];
-    elseif C=="CL"
-        CC::Int64=raw["nConL"];
-        V_0=Lininit["V_c_Line"];θ_0=Lininit["θ_c_Line"];#Union{Array{Float64, 3}, Matrix{Float64},Float64}
-        exc::Vector{Int64}=raw["ConL"]."#";
-        SENS=Lininit["CSens"];#::Union{Matrix{Matrix{Float64}},Vector{Matrix{Float64}}}
-    end
-    TR=ones(Float64,nline+ntrans)
-    if ntrans!=0 TR[nline+1:end]= raw["Trans"]."ratio" end
-
-    Pa_IV=Array{Float64,4}(undef, nline+ntrans,nbus,nTP,CC);Pa_Iθ=Array{Float64,4}(undef, nline+ntrans,nbus,nTP,CC);
-    # Pa_PsV=Array{Float64,4}(undef, nline+ntrans,nbus,nTP,CC);Pa_Psθ=Array{Float64,4}(undef, nline+ntrans,nbus,nTP,CC);
-    # Pa_PrV=Array{Float64,4}(undef, nline+ntrans,nbus,nTP,CC);Pa_Prθ=Array{Float64,4}(undef, nline+ntrans,nbus,nTP,CC);
-    # Pa_QsV=Array{Float64,4}(undef, nline+ntrans,nbus,nTP,CC);Pa_Qsθ=Array{Float64,4}(undef, nline+ntrans,nbus,nTP,CC);
-    # Pa_QrV=Array{Float64,4}(undef, nline+ntrans,nbus,nTP,CC);Pa_Qrθ=Array{Float64,4}(undef, nline+ntrans,nbus,nTP,CC);
-
-    Names=["From","To","g (pu)","b (pu)","g_sh (pu)","b_sh (pu)"]
-    df::DataFrame=vcat(raw["Line"][:,Names],raw["Trans"][:,Names])
-    # df=raw["Line"];
-    g_sh::Vector{Int64}=df."g_sh (pu)";b_sh::Vector{Float64}=df."b_sh (pu)";g::Vector{Float64}=df."g (pu)";b::Vector{Float64}=df."b (pu)";
-    for l::Int64=1:nline+ntrans,i::Int64=1:nbus,t::Int64=1:nTP,c::Int64=1:CC
-        Δθ::Float64=θ_0[t,df."From"[l],c]-θ_0[t,df."To"[l],c]
-        Vn::Float64=V_0[t,df."From"[l],c];Vm::Float64=V_0[t,df."To"[l],c]
-        if df[l,"From"]==i
-            Pa_IV[l,i,t,c]= (g[l]^2+b[l]^2)*(2*Vn-2*Vm*cos(Δθ))
-            Pa_Iθ[l,i,t,c]= (g[l]^2+b[l]^2)*(2*Vn*Vm*sin(Δθ))
-            # Pa_PsV[l,i,t,c]=    (g_sh[l]/2+g[l])*Vn*2+  TR[l]*( -g[l]*Vm*cos(Δθ)    -b[l]*Vm*sin(Δθ))
-            # Pa_Psθ[l,i,t,c]=                            TR[l]*( +g[l]*Vn*Vm*sin(Δθ) -b[l]*Vn*Vm*cos(Δθ))
-            # Pa_QsV[l,i,t,c]=    (-b_sh[l]/2-b[l])*Vn*2+ TR[l]*( +b[l]*Vm*cos(Δθ)    -g[l]*Vm*sin(Δθ))
-            # Pa_Qsθ[l,i,t,c]=                            TR[l]*( -b[l]*Vn*Vm*sin(Δθ) -g[l]*Vn*Vm*cos(Δθ))
-            # Pa_PrV[l,i,t,c]=                            TR[l]*( -g[l]*Vm*cos(Δθ)    +b[l]*Vm*sin(Δθ))
-            # Pa_Prθ[l,i,t,c]=                            TR[l]*( +g[l]*Vn*Vm*sin(Δθ) +b[l]*Vn*Vm*cos(Δθ))
-            # Pa_QrV[l,i,t,c]=                            TR[l]*( +b[l]*Vm*cos(Δθ)    +g[l]*Vm*sin(Δθ))
-            # Pa_Qrθ[l,i,t,c]=                            TR[l]*( -b[l]*Vn*Vm*sin(Δθ) +g[l]*Vn*Vm*cos(Δθ))
-        elseif df[l,"To"]==i
-            Pa_IV[l,i,t,c]= (g[l]^2+b[l]^2)*(2*Vm-2*Vn*cos(Δθ))
-            Pa_Iθ[l,i,t,c]= (g[l]^2+b[l]^2)*(-2*Vn*Vm*sin(Δθ))
-            # Pa_PsV[l,i,t,c]=                                    TR[l]*( -g[l]*Vn*cos(Δθ)    -b[l]*Vn*sin(Δθ))
-            # Pa_Psθ[l,i,t,c]=                                    TR[l]*( -g[l]*Vn*Vm*sin(Δθ) +b[l]*Vn*Vm*cos(Δθ))
-            # Pa_QsV[l,i,t,c]=                                    TR[l]*( +b[l]*Vn*cos(Δθ)    -g[l]*Vn*sin(Δθ))
-            # Pa_Qsθ[l,i,t,c]=                                    TR[l]*( +b[l]*Vn*Vm*sin(Δθ) +g[l]*Vn*Vm*cos(Δθ))
-            # Pa_PrV[l,i,t,c]=(TR[l]^2)*(g_sh[l]/2+g[l])*Vm*2+    TR[l]*( -g[l]*Vn*cos(Δθ)    +b[l]*Vn*sin(Δθ))
-            # Pa_Prθ[l,i,t,c]=                                    TR[l]*( -g[l]*Vn*Vm*sin(Δθ) -b[l]*Vn*Vm*cos(Δθ))
-            # Pa_QrV[l,i,t,c]= (TR[l]^2)*(-b_sh[l]/2-b[l])*Vm*2+  TR[l]*( +b[l]*Vm*cos(Δθ)    +g[l]*Vm*sin(Δθ))
-            # Pa_Qrθ[l,i,t,c]=                                    TR[l]*( +b[l]*Vn*Vm*sin(Δθ) -g[l]*Vn*Vm*cos(Δθ))
+    DV_up = V_0.- (acc_V .+ Vmaxlimit0)
+    DV_dn = V_0.- (-acc_V .+ Vminlimit0)
+    DV_up_4D = zeros(Float64, nBus, 1, nTP, cl)
+    DV_dn_4D = zeros(Float64, nBus, 1, nTP, cl)
+    S_VP_4D = zeros(Float64, nBus, nPActBus, nTP, cl)
+    S_IP_4D = zeros(Float64, raw["nLine"]+raw["nTrans"], nPActBus, nTP, cl)
+    Threads.@threads for t in 1:nTP
+        for c in 1:cl
+            @views S_VP_4D[:, :, t, c] .= S_VP[t, c]
+            @views S_IP_4D[:, :, t, c] .= S_IP[t, c]
+            @views DV_up_4D[:, 1, t, c] .= DV_up[t, :, c]  # direct assignment
+            @views DV_dn_4D[:, 1, t, c] .= DV_dn[t, :, c]  # direct assignment
         end
     end
-    SENSDict = Dict{String, Array{Float64, 4}}(
-        "S_IP" => zeros(nline + ntrans, nbus, nTP, CC),
-        "S_IQ" => zeros(nline + ntrans, nbus, nTP, CC),
-        # "S_PrP" => zeros(nline + ntrans, nbus, nTP, CC),
-        # "S_PsP" => zeros(nline + ntrans, nbus, nTP, CC),
-        # "S_QrP" => zeros(nline + ntrans, nbus, nTP, CC),
-        # "S_QsP" => zeros(nline + ntrans, nbus, nTP, CC),
-        # "S_PrQ" => zeros(nline + ntrans, nbus, nTP, CC),
-        # "S_PsQ" => zeros(nline + ntrans, nbus, nTP, CC),
-        # "S_QrQ" => zeros(nline + ntrans, nbus, nTP, CC),
-        # "S_QsQ" => zeros(nline + ntrans, nbus, nTP, CC),
-        "S_VP" => zeros(nbus, nbus, nTP, CC),
-        "S_VQ" => zeros(nbus, nbus, nTP, CC),
-        "S_θP" => zeros(nbus, nbus, nTP, CC),
-        "S_θQ" => zeros(nbus, nbus, nTP, CC)
-    )
-    for i::Int64=1:nbus,t::Int64=1:nTP,c::Int64=1:CC
-        SENStemp=SENS[t,c]
-        for l::Int64=1:nline+ntrans
-            if exc[c]==l
-                for text in ["S_IP","S_IQ"] #,"S_PrP","S_PsP","S_QrP","S_QsP","S_PrQ","S_PsQ","S_QrQ","S_QsQ"
-                    SENSDict[text][l,i,t,c]=0
+    S_VP1=keep_K_percent_twoside_4D(S_VP_4D,0.99)
+    Pinj_up,Pinj_dn=0,0
+    Gen_ind=indexin(raw["Gen"]."Bus", raw["PActBus"])
+    report_TR=DataFrame(worst_vio_sqrt=0.0,acc=0.0,TR=0.0,z=z0,y=z0,z_acc=0.0,y_acc=0.0,y_acc_cas=0.0 ,ramp_acc=0.0,z_V=0,acc_VP=0.0)
+    deleteat!(report_TR,1)
+    # TR=1
+    z_acc=0
+    y_acc=0
+    ramp_acc=0
+    TR_best=deepcopy(TR)
+    S_VP_pos = max.(S_VP_4D, 0.0)
+    S_VP_neg = min.(S_VP_4D, 0.0)
+    S_IP_pos = max.(S_IP_4D, 0.0)
+    S_IP_neg = min.(S_IP_4D, 0.0)
+    if !isempty(CascadeInfo)
+        if !isnothing(CascadeInfo["optimal_tcs"])
+            firstind=findall(x->x in CascadeInfo["optimal_tcs"],CascadeInfo["tcs_Cascade"])
+        else
+            firstind=findall(x->x[3]==1,CascadeInfo["tcs_Cascade"])
+        end
+        I_relax=CascadeInfo["I_relax"]
+
+        # casreps[4,4]
+        # optstage[3][8]
+    end
+    while TR_max - TR_min > 1e-7 # Stop when the range is small enough
+        if iter==0
+            nothing
+        elseif iter>=Iter_max
+            TR=TR_best
+        # elseif (z_acc)/max(y_acc,ramp_acc)>5 && y==0
+        #     TR=max(TR/((z_acc)/max(y_acc)),1.2 *TR_min)
+        else
+            TR = (TR_min + TR_max) / 2
+        end
+
+        VP_up1.=0
+        VP_dn1.=0
+        Pinj_up=min.(TR,PBound[1])
+        Pinj_dn=max.(-TR,PBound[2])
+        Threads.@threads for t in 1:nTP
+            if !isempty(CascadeInfo)
+                tcas=findall(x-> x[1]==t,tCascade) else tcas=[] end
+            for c in 1:cl
+                # @views S_IP_tc = S_IP[t, c]  # Extract the 2D matrix (nBus × some_dim) only once
+                # @views S_VP_tc = S_VP[t,c]
+                @views up = Pinj_up[t, :, c]  # 1 × nPActBus
+                @views dn = Pinj_dn[t, :, c]
+                
+                @views @. ovr_Sens_IP_upmat[:, :, t, c] = S_IP_pos[:,:,t, c]* up' + S_IP_neg[:,:,t, c]* dn'
+                @views @. ovr_Sens_IP_dnmat[:, :, t, c] = S_IP_pos[:,:,t, c]* dn' + S_IP_neg[:,:,t, c]* up'
+                @views ovr_Sens_IP_up[t, :, c] .= sum(ovr_Sens_IP_upmat[:, :, t, c], dims=2)[1:raw["nLine"]] .+ 1e-6
+                @views ovr_Sens_IP_dn[t, :, c] .= sum(ovr_Sens_IP_dnmat[:, :, t, c], dims=2)[1:raw["nLine"]] .+ 1e-6
+
+                @views @. ovr_Sens_VP_upmat[:, :, t, c] .= S_VP_pos[:,:,t, c].* up' .+ S_VP_neg[:,:,t, c].* dn'
+                @views @. ovr_Sens_VP_dnmat[:, :, t, c] .= S_VP_pos[:,:,t, c].* dn' .+ S_VP_neg[:,:,t, c].* up'
+                @views ovr_Sens_VP_up[t, :, c] .= sum(ovr_Sens_VP_upmat[:, :, t, c], dims=2) .+ 1e-6
+                @views ovr_Sens_VP_dn[t, :, c] .= sum(ovr_Sens_VP_dnmat[:, :, t, c], dims=2) .+ 1e-6
+
+                if !isempty(tcas) && c==1 
+                    @views ovr_Sens_IP_up_cas[tcas] = S_IP_cas_pos[tcas,:]* up .+ S_IP_cas_neg[tcas,:]* dn
+                    @views ovr_Sens_IP_dn_cas[tcas] = S_IP_cas_pos[tcas,:]* dn .+ S_IP_cas_neg[tcas,:]* up
                 end
-            else
-                sb::Int64=df."From"[l];rb::Int64=df."To"[l];
-                SENSDict["S_IP"][l,i,t,c]= (Pa_IV[l,sb,t,c]*SENStemp[nbus+sb,i]+ Pa_IV[l,rb,t,c]*SENStemp[nbus+rb,i]+ Pa_Iθ[l,sb,t,c]*SENStemp[sb,i]+ Pa_Iθ[l,rb,t,c]*SENStemp[rb,i]);
-                SENSDict["S_IQ"][l,i,t,c]= (Pa_IV[l,sb,t,c]*SENStemp[nbus+sb,i+nbus]+ Pa_IV[l,rb,t,c]*SENStemp[nbus+rb,i+nbus]+ Pa_Iθ[l,sb,t,c]*SENStemp[sb,nbus+i]+ Pa_Iθ[l,rb,t,c]*SENStemp[rb,nbus+i]);
-                # SENSDict["S_PrP"][l,i,t,c]= (Pa_PrV[l,sb,t,c]*SENStemp[nbus+sb,i]+ Pa_PrV[l,rb,t,c]*SENStemp[nbus+rb,i]+ Pa_Prθ[l,sb,t,c]*SENStemp[sb,i]+ Pa_Prθ[l,rb,t,c]*SENStemp[rb,i]);
-                # SENSDict["S_PsP"][l,i,t,c]= (Pa_PsV[l,sb,t,c]*SENStemp[nbus+sb,i]+ Pa_PsV[l,rb,t,c]*SENStemp[nbus+rb,i]+ Pa_Psθ[l,sb,t,c]*SENStemp[sb,i]+ Pa_Psθ[l,rb,t,c]*SENStemp[rb,i]);
-                # SENSDict["S_QrP"][l,i,t,c]= (Pa_QrV[l,sb,t,c]*SENStemp[nbus+sb,i]+ Pa_QrV[l,rb,t,c]*SENStemp[nbus+rb,i]+ Pa_Qrθ[l,sb,t,c]*SENStemp[sb,i]+ Pa_Qrθ[l,rb,t,c]*SENStemp[rb,i]);
-                # SENSDict["S_QsP"][l,i,t,c]= (Pa_QsV[l,sb,t,c]*SENStemp[nbus+sb,i]+ Pa_QsV[l,rb,t,c]*SENStemp[nbus+rb,i]+ Pa_Qsθ[l,sb,t,c]*SENStemp[sb,i]+ Pa_Qsθ[l,rb,t,c]*SENStemp[rb,i]);
-                # SENSDict["S_PrQ"][l,i,t,c]= (Pa_PrV[l,sb,t,c]*SENStemp[nbus+sb,i+nbus]+ Pa_PrV[l,rb,t,c]*SENStemp[nbus+rb,i+nbus]+ Pa_Prθ[l,sb,t,c]*SENStemp[sb,nbus+i]+ Pa_Prθ[l,rb,t,c]*SENStemp[rb,nbus+i]);
-                # SENSDict["S_PsQ"][l,i,t,c]= (Pa_PsV[l,sb,t,c]*SENStemp[nbus+sb,i+nbus]+ Pa_PsV[l,rb,t,c]*SENStemp[nbus+rb,i+nbus]+ Pa_Psθ[l,sb,t,c]*SENStemp[sb,nbus+i]+ Pa_Psθ[l,rb,t,c]*SENStemp[rb,nbus+i]);
-                # SENSDict["S_QrQ"][l,i,t,c]= (Pa_QrV[l,sb,t,c]*SENStemp[nbus+sb,i+nbus]+ Pa_QrV[l,rb,t,c]*SENStemp[nbus+rb,i+nbus]+ Pa_Qrθ[l,sb,t,c]*SENStemp[sb,nbus+i]+ Pa_Qrθ[l,rb,t,c]*SENStemp[rb,nbus+i]);
-                # SENSDict["S_QsQ"][l,i,t,c]= (Pa_QsV[l,sb,t,c]*SENStemp[nbus+sb,i+nbus]+ Pa_QsV[l,rb,t,c]*SENStemp[nbus+rb,i+nbus]+ Pa_Qsθ[l,sb,t,c]*SENStemp[sb,nbus+i]+ Pa_Qsθ[l,rb,t,c]*SENStemp[rb,nbus+i]);
             end
         end
-        for j::Int64=1:nbus
-            SENSDict["S_VP"][j,i,t,c]= SENStemp[nbus+j,i]
-            SENSDict["S_VQ"][j,i,t,c]= SENStemp[nbus+j,nbus+i]
-            SENSDict["S_θP"][j,i,t,c]= SENStemp[j,i]
-            SENSDict["S_θQ"][j,i,t,c]= SENStemp[j,nbus+i]
+
+
+        @views @. VP_up = ovr_Sens_VP_upmat + DV_up_4D
+        @views @. VP_dn = -ovr_Sens_VP_dnmat - DV_dn_4D
+
+        keep_K_percent_new_4D_V2!(VP_up1,VP_up,0.99)
+        keep_K_percent_new_4D_V2!(VP_dn1,VP_dn,0.99)
+
+        VP_up1 .|= S_VP1
+        VP_dn1 .|= S_VP1
+        @. ovr_Sens_VP_upmat *=VP_up1 #||S_VP1 
+        @. ovr_Sens_VP_dnmat *=VP_dn1 #||S_VP1
+
+        @views ovr_Sens_VP_up .= permutedims(sum(ovr_Sens_VP_upmat,dims=2)[:,1,:,:], (2, 1, 3)) 
+        @views ovr_Sens_VP_dn .= permutedims(sum(ovr_Sens_VP_dnmat,dims=2)[:,1,:,:], (2, 1, 3)) 
+
+        @views @. vals_IP = sqrt(max(0.0, I2_0[:] + ovr_Sens_IP_up[:])) - Imaxlimit0_sqrt[:]
+        # @views @. vals_IP_cas = sqrt(max(0.0, CascadeInfo["diffVm"][:,1].+ ovr_Sens_IP_up_cas)) 
+
+        k_IP = min(length(vals_IP), Int(zmax))
+        z_acc = partialsort(vals_IP, 1:k_IP; rev=true)[end]
+        # k_IP = min(length(vals_IP)+length(vals_IP_cas), Int(zmax))
+        # z_acc = partialsort(vcat(vals_IP,vals_IP_cas), 1:k_IP; rev=true)[end]
+
+        # @views vals_VP .= vcat(vec(V_0 .+ ovr_Sens_VP_up .- Vmaxlimit0),
+        #    vec(-(V_0 .+ ovr_Sens_VP_dn .- Vminlimit0)))
+        
+        @views @. vals_VP[1:V0_length] = (V_0 + ovr_Sens_VP_up./p_coef - Vmaxlimit0)[:]
+        @views @. vals_VP[V0_length+1:end] = (-(V_0 .+ ovr_Sens_VP_dn./p_coef .- Vminlimit0))[:]
+    
+        k_VP = min(length(vals_VP), Int(zmax_V))
+        z_acc_VP = partialsort(vals_VP, 1:k_VP; rev=true)[end]
+
+        @views Vmax_VP .= V_0 .+ ovr_Sens_VP_up/p_coef
+        @views Vmin_VP .= V_0 .+ ovr_Sens_VP_dn/p_coef
+        Vmaxinrisk .= Vmax_VP .>= Vmaxlimit0.+max(z_acc_VP,1e-4)
+        Vmininrisk .= Vmin_VP .<= Vminlimit0.-max(z_acc_VP,1e-4)
+
+
+        ramp_acc=0
+        y_acc=maximum(sqrt.(max.(0,I2_0+ovr_Sens_IP_dn./P_eff)).-Imaxlimit0_sqrt)
+        # firstind
+        if !isempty(CascadeInfo)
+            # y_acc_cas=maximum(sqrt.(max.(0,CascadeInfo["diffVm"][firstind].*Imaxlimit0[CascadeInfo["line_Cascade"][firstind]].+ (ovr_Sens_IP_dn_cas[firstind]./(2))));init=0)
+            y_acc_cas=maximum(sqrt.(max.(0, ((CascadeInfo["Vm_Cascade"][firstind].*Imaxlimit0_sqrt[CascadeInfo["line_Cascade"][firstind]]).^2)+(ovr_Sens_IP_dn_cas[firstind]./(P_eff))))- I_relax*Imaxlimit0_sqrt[CascadeInfo["line_Cascade"][firstind]];init=0)
+        else
+            y_acc_cas=0
         end
+        # y_acc_cas=0
+        acc=max(z_acc,y_acc)
+        @. Imax_IP = I2_0 + ovr_Sens_IP_up/1
+        @. atrisk = Imax_IP >= (Imaxlimit0_sqrt + max(z_acc,1e-4))^2
+
+        z = sum(atrisk)
+        z_V = sum(Vmaxinrisk)+sum(Vmininrisk)
+        y = sum(@. (I2_0.+ovr_Sens_IP_dn./P_eff .>= (Imaxlimit0_sqrt .+ y_acc).^2))
+
+        push!(report_TR,[worst_vio_sqrt,acc,TR,z,y,z_acc,y_acc,y_acc_cas,ramp_acc,z_V,z_acc_VP])
+        if iter>=Iter_max
+            break
+        end
+
+        # if acc<=best_acc && z_acc_VP <= acc_V
+        #     best_acc=max(0,acc)
+        #     TR_best=TR
+        # end
+
+        # if acc <= best_acc && z_acc_VP <= acc_V && y_acc_cas<=best_acc_cas
+        #     best_acc = max(0.0, acc)
+        #     best_acc_cas=max(0.0, y_acc_cas)
+        #     TR_best  = TR
+        # end
+        if !Glob["obj_imp"]
+            # if (z_acc >= max(y_acc,-0.1) || y_acc<=0 || z_acc_VP >= acc_V) && (z_acc>=0 || max(0 , y_acc_cas)<=0)
+            if (z_acc >= max(y_acc, 0.0) || y_acc <= 0 || z_acc_VP >= acc_V) && (z_acc>=y_acc_cas || max(0 , y_acc_cas)<=0)
+                TR_max = TR  # Reduce TR
+                if TR_max<TR_best
+                    TR_best=TR_max
+                    best_acc=max(0,acc)
+                end
+            else
+                TR_min = TR  # Increase TR
+                TR_best = TR
+                best_acc=max(0,acc)
+            end
+        else
+            if (z_acc>=max(y_acc) || z_acc_VP >= acc_V) && (z_acc>=0 || max(0 , y_acc_cas)<=0)
+                TR_max = TR  # Reduce TR
+                # if TR_max<TR_best
+                #     TR_best=TR_max
+                #     best_acc=max(0,acc)
+                # end
+            else
+                TR_min = TR  # Increase TR
+                # TR_best = TR
+                # best_acc=max(0,acc)
+            end
+        end
+
+        iter+=1
     end
 
-    threshold = 0.0001
-    for key in ["S_VP" "S_VQ" "S_IP" "S_IQ"]#collect(keys(SENSDict))
-        # Broadcast comparison and set elements less than threshold to 0
-        SENSDict[key] .= ifelse.(abs.(SENSDict[key]) .> threshold, SENSDict[key], 0.0)
+    display(report_TR)
+    Vmaxindex_P = findall(Vmaxinrisk)
+    Vminindex_P = findall(Vmininrisk)
+    println("Number of voltage in risk due to P adjustment: ", length(Vmaxindex_P)+length(Vminindex_P))
+    println("voltage acc left out due to P adjustment: ", z_acc_VP)
+    ImaxIndex = findall(atrisk)
+    # ImaxIndex = findall(.~isnan.(I2_0));    z_acc=0;
+    return TR,ImaxIndex,Vmaxindex_P,Vminindex_P,max(0.0,z_acc),[Pinj_up,Pinj_dn],worst_vio,worst_vio_sqrt,report_TR,Vmax_VP,Vmin_VP,Imax_IP
+end
+
+function findTR_Q_coupled2(Glob, nTP, V_0,Vmax_VP,Vmin_VP,VmaxIndex_P,VminIndex_P,Vmaxlimit0,Vminlimit0,S_VQ,QBound,raw,cl;Improve_Rate=5)
+
+    z0=sum((V_0-Vmaxlimit0).>=0)+sum(Vminlimit0-V_0.>=0)
+    zmax=round(size(Vmaxlimit0)[1]*size(Vmaxlimit0)[2]*size(Vmaxlimit0)[3]*Q_con_percent)+1
+    if Glob["obj_imp"]
+        TR=max(0.05,Glob["TR_before"][2]);q_coef=Q_eff
+    else
+        TR=0.01; q_coef=1
     end
-    # threshold = 0.001
-    # for key in [ "S_PrP" "S_PsP" "S_PrQ" "S_PsQ"]#collect(keys(SENSDict)) "S_VP" "S_VQ"
-    #     # Broadcast comparison and set elements less than threshold to 0
-    #     SENSDict[key] .= ifelse.(abs.(SENSDict[key]) .> threshold, SENSDict[key], 0.0)
-    # end
-    # threshold = 0.001
-    # for key in [ "S_QrP" "S_QsP" "S_QrQ" "S_QsQ"]#collect(keys(SENSDict)) "S_VP" "S_VQ"
-    #     # Broadcast comparison and set elements less than threshold to 0
-    #     SENSDict[key] .= ifelse.(abs.(SENSDict[key]) .> threshold, SENSDict[key], 0.0)
-    # end
-    return SENSDict,Pa_IV,Pa_Iθ
+    TR_min=0.00;TR_max=TR_min+2.0
+    iter=0
+    Itermax=10
+    Vmaxinrisk=falses(size(V_0));Vmininrisk=falses(size(V_0));
+    Vmaxinrisk_P=falses(size(V_0));Vmininrisk_P=falses(size(V_0));
+    # Vmaxinrisk_Q=falses(size(V_0));Vmaxinrisk_Q=falses(size(V_0));
+    Vmaxviolated=0
+    Vminviolated=0
+    # worst_vio=max(maximum(Vmax_VP-Vmaxlimit0),maximum(-(Vmin_VP-Vminlimit0)))
+    worst_vio=max(maximum(V_0-Vmaxlimit0),maximum(-(V_0-Vminlimit0)))
+
+    # target_acc=(worst_vio/Improve_Rate)
+    adj_acc=0
+    acc=0
+    best_acc=max(0,worst_vio)
+    target_acc=0
+    Vmaxlimit_new=deepcopy(Vmaxlimit0)
+    genbus=raw["Gen"].Bus
+    genbus_s = Set(genbus)  # O(1) lookup
+    allbus=1:raw["nBus"]
+    allbus_s = Set(allbus)  # O(1) lookup
+
+    V0_length= length(V_0)
+    nBus      = raw["nBus"]
+    nQActBus  = raw["nQActBus"]
+    ovr_Sens_VQ_up = zeros(nTP, raw["nBus"], cl);ovr_Sens_VQ_dn = zeros(nTP, raw["nBus"], cl)
+    ovr_Sens_VQ_up_org = zeros(nTP, raw["nBus"], cl);ovr_Sens_VQ_dn_org = zeros(nTP, raw["nBus"], cl)
+
+    ovr_Sens_VQ_upmat = zeros(Float64, nBus, nQActBus, nTP, cl)
+    ovr_Sens_VQ_dnmat = zeros(Float64, nBus, nQActBus, nTP, cl)
+    VQ_up             = zeros(Float64, nBus, nQActBus, nTP, cl)
+    VQ_dn             = zeros(Float64, nBus, nQActBus, nTP, cl)
+    # upelem            = zeros(Float64, nBus, nQActBus, nTP, cl)
+    # dnelem            = zeros(Float64, nBus, nQActBus, nTP, cl)
+    VQ_up1      =falses(nBus, nQActBus, nTP, cl)
+    VQ_dn1      =falses(nBus, nQActBus, nTP, cl)
+    V_max_VPQ   = similar(ovr_Sens_VQ_up);V_min_VPQ   = similar(ovr_Sens_VQ_dn)
+    V_max_VQ   = similar(ovr_Sens_VQ_up);V_min_VQ   = similar(ovr_Sens_VQ_dn)
+    vals_VP=zeros(Float64,2* V0_length);vals_VQ=zeros(Float64,2* V0_length)
+
+    DV_up=Vmax_VP.- Vmaxlimit0
+    DV_dn=Vmin_VP.- Vminlimit0
+
+    DV_up_4D = zeros(Float64, nBus, 1, nTP, cl)
+    DV_dn_4D = zeros(Float64, nBus, 1, nTP, cl)
+    S_VQ_4D = zeros(Float64, nBus, nQActBus, nTP, cl)
+    Threads.@threads for t in 1:nTP
+        for c in 1:cl
+            @views S_VQ_4D[:, :, t, c] .= S_VQ[t, c]
+            @views DV_up_4D[:, 1, t, c] .= DV_up[t, :, c]  # direct assignment
+            @views DV_dn_4D[:, 1, t, c] .= DV_dn[t, :, c]  # direct assignment
+        end
+    end
+    S_VQ1=keep_K_percent_twoside_4D(S_VQ_4D,0.9)
+    Qinj_up,Qinj_dn=0,0
+    y=0
+    z=0
+    # TR=0.01
+    Vmaxlimit_new=Vmaxlimit0
+    Vminlimit_new=Vminlimit0
+    report_TR= DataFrame(worst_vio=0.0,acc=0.0,TR=0.0,z=z0,y=z0,z_acc_Q=0.0,y_acc_Q=0.0,z_acc_P=0.0,y_acc_P=0.0,plotdata=[0.0])
+    deleteat!(report_TR,1)
+    z_acc_P=0;z_acc_Q=0
+    y_acc_P=0;y_acc_Q=0
+    S_VQ_pos = max.(S_VQ_4D, 0.0)
+    S_VQ_neg = min.(S_VQ_4D, 0.0)
+
+    TR_best=max(1.0,TR)
+    while TR_max - TR_min > 1e-7  # Stop when the range is small enough
+        VQ_up1.=0
+        VQ_dn1.=0
+        # Update TR using bisection
+        if iter==0
+            nothing
+        elseif iter>=Itermax
+            TR=TR_best
+        else
+            TR = (TR_min + TR_max) / 2
+        end
+        Qinj_up=min.(TR,QBound[1])
+        Qinj_dn=max.(-TR,QBound[2])
+        Threads.@threads for t in 1:nTP
+            for c in 1:cl
+            # @views S_VQ_tc = S_VQ[t, c]  # Extract the 2D matrix (nBus × some_dim) only once
+            @views up = Qinj_up[t, :, c]  # 1 × nPActBus
+            @views dn = Qinj_dn[t, :, c]
+
+            @views @. ovr_Sens_VQ_upmat[:, :, t, c] = S_VQ_pos[:,:,t, c]* up' + S_VQ_neg[:,:,t, c]* dn'
+            @views @. ovr_Sens_VQ_dnmat[:, :, t, c] = S_VQ_pos[:,:,t, c]* dn' + S_VQ_neg[:,:,t, c]* up'
+
+
+            @views ovr_Sens_VQ_up[t, :, c] .= sum(ovr_Sens_VQ_upmat[:, :, t, c], dims=2)
+            @views ovr_Sens_VQ_dn[t, :, c] .= sum(ovr_Sens_VQ_dnmat[:, :, t, c], dims=2)
+            # @views ovr_Sens_VQ_upmat[:, :, t, c] .= up_max_V
+            # @views ovr_Sens_VQ_dnmat[:, :, t, c] .= dn_max_V
+            end
+        end
+        @views @. ovr_Sens_VQ_up_org = ovr_Sens_VQ_up + 1e-6
+        @views @. ovr_Sens_VQ_dn_org = ovr_Sens_VQ_dn + 1e-6
+
+
+        @views @. VQ_up = ovr_Sens_VQ_upmat + DV_up_4D
+        @views @. VQ_dn = -ovr_Sens_VQ_dnmat - DV_dn_4D
+        keep_K_percent_new_4D_V2!(VQ_up1,VQ_up,0.0)
+        keep_K_percent_new_4D_V2!(VQ_dn1,VQ_dn,0.0)
+
+
+        # keep_K_percent_new_4D_V2!(VQ_up1,ovr_Sens_VQ_upmat,0.95)
+        # keep_K_percent_new_4D_V2!(VQ_dn1,VQ_dn,0.0)
+
+        #previous
+            keep_top_4D_V2!(VQ_up1,VQ_up,10)
+            keep_top_4D_V2!(VQ_dn1,VQ_dn,10)
+        # #new
+
+        #     keep_K_percent_new_4D_row_V2!(VQ_up1,ovr_Sens_VQ_upmat,0.999)
+        #     keep_K_percent_new_4D_row_V2!(VQ_dn1,-ovr_Sens_VQ_dnmat,0.999)
+
+        #     keep_top_4D_V2!(VQ_up1,VQ_up,5)
+        #     keep_top_4D_V2!(VQ_dn1,VQ_dn,5)
+        #
+        @. VQ_up1 |=S_VQ1
+        @. VQ_dn1 |=S_VQ1
+        @. ovr_Sens_VQ_upmat *= VQ_up1 
+        @. ovr_Sens_VQ_dnmat *= VQ_dn1
+
+        @views ovr_Sens_VQ_up.= permutedims(sum(ovr_Sens_VQ_upmat,dims=2)[:,1,:,:], (2, 1, 3)) 
+        @views ovr_Sens_VQ_dn.= permutedims(sum(ovr_Sens_VQ_dnmat,dims=2)[:,1,:,:], (2, 1, 3)) 
+        @. V_max_VPQ=(Vmax_VP+ovr_Sens_VQ_up/q_coef .-Vmaxlimit_new)
+        @. V_max_VQ=(V_0+ovr_Sens_VQ_up/q_coef .-Vmaxlimit_new)
+        @. V_max_VQ[VmaxIndex_P].=-10
+        @. V_max_VPQ[VmaxIndex_P].=-10
+
+        @. V_min_VPQ=-(Vmin_VP+ovr_Sens_VQ_dn/q_coef .-Vminlimit_new)
+        @. V_min_VQ=-(V_0+ovr_Sens_VQ_dn/q_coef .-Vminlimit_new)
+        @. V_min_VQ[VminIndex_P].=-10
+        @. V_min_VPQ[VminIndex_P].=-10
+        @views @. vals_VP[1:V0_length] = V_max_VPQ[:]
+        @views @. vals_VP[1+V0_length:end] = V_min_VPQ[:]
+        k_VP = min(length(vals_VP), Int(zmax))
+        z_acc_P = partialsort(vals_VP, 1:k_VP; rev=true)[end]
+        vals_VQ = vcat( vec(V_max_VQ),vec((V_min_VQ)))
+
+        @views @. vals_VQ[1:V0_length] = V_max_VQ[:]
+        @views @. vals_VQ[1+V0_length:end] = V_min_VQ[:]
+
+        k_VQ = min(length(vals_VQ), Int(zmax))
+        z_acc_Q = partialsort(vals_VQ, 1:k_VQ; rev=true)[end]
+        y_acc_Q=max(maximum(V_0+(ovr_Sens_VQ_dn_org/Q_eff).-Vmaxlimit_new),maximum(-(V_0+(ovr_Sens_VQ_up_org/Q_eff).-Vminlimit_new)),0)
+
+        y_acc_P=max(maximum(Vmax_VP+(ovr_Sens_VQ_dn_org/Q_eff).-Vmaxlimit_new),maximum(-(Vmin_VP+(ovr_Sens_VQ_up_org/Q_eff).-Vminlimit_new)),0)
+
+        acc=max(-0.0,y_acc_Q)
+        @. Vmaxinrisk_P = Vmax_VP+ovr_Sens_VQ_up/1 >= Vmaxlimit_new+max(z_acc_P,1e-4)
+        @. Vmininrisk_P = Vmin_VP+ovr_Sens_VQ_dn/1 <= Vminlimit_new-max(z_acc_P,1e-4)
+
+        # @. Vmaxinrisk_Q = V_0+ovr_Sens_VQ_up/1 .>= Vmaxlimit_new.+max(z_acc_Q,1e-4)
+        # @. Vmininrisk_Q = V_0+ovr_Sens_VQ_dn/1 .<= Vminlimit_new.-max(z_acc_Q,1e-4)
+
+        @. Vmaxinrisk= Vmaxinrisk_P #.|| Vmaxinrisk_Q
+        @. Vmininrisk= Vmininrisk_P #.|| Vmininrisk_Q
+        z= sum(Vmaxinrisk) + sum(Vmininrisk)
+        y = sum(Vmax_VP+(ovr_Sens_VQ_dn/Q_eff) .> Vmaxlimit_new.+y_acc_P) + sum(Vmin_VP+(ovr_Sens_VQ_up/Q_eff) .<Vminlimit_new.-y_acc_P)
+        push!(report_TR,[worst_vio,acc,TR,z,y,z_acc_Q,y_acc_Q,z_acc_P,y_acc_P,0.0])
+        if iter>=Itermax
+            break
+        end
+
+        # if acc<=best_acc && z_acc_Q <= y_acc_Q && z_acc_P<=worst_vio && max(0,z_acc_P)>=y_acc_P  #&& max(z_acc_Q,z_acc_P) <= max(0.05,y_acc_Q)
+        #     best_acc=acc
+        #     TR_best=TR
+        # end
+        # if  z_acc_Q <= y_acc_P && z_acc_P<=worst_vio  #&& max(z_acc_Q,z_acc_P) <= max(0.05,y_acc_Q)
+        #     best_acc=acc
+        #     TR_best=TR
+        # end
+        if acc <= best_acc && z_acc_Q <= y_acc_Q && z_acc_P <= worst_vio
+            best_acc = acc
+            TR_best  = TR
+        end
+        
+        if !Glob["obj_imp"]
+
+            if z_acc_P >= worst_vio ||
+            ((y_acc_P <= max(0.001, maximum(Vmax_VP), maximum(-Vmin_VP)) - 0.001) && max(0.0, z_acc_Q) >= y_acc_Q)
+                TR_max = TR
+            else
+                TR_min = TR
+            end
+            # if z_acc_P>=worst_vio  || ((y_acc_P<=max(0.001,maximum(Vmax_VP),maximum(-Vmin_VP))-0.001) && max(0,z_acc_Q)>=y_acc_Q && (max(0,z_acc_P)>=y_acc_P) || z_acc_Q>=worst_vio) #|| (y_acc_P<= max(0.1,maximum(Vmax_VP),maximum(-Vmin_VP))-0.1))) #|| z_acc_Q >= worst_vio #|| max(z_acc_P,z_acc_Q)>= max(0.05,y_acc_Q)
+            # # if z_acc_P>=worst_vio  || ((y_acc_P<=max(0.001,maximum(Vmax_VP),maximum(-Vmin_VP))-0.001) && max(0,z_acc_Q)>=y_acc_Q && (max(0,z_acc_P)>=y_acc_P )) #|| z_acc_Q >= 0 #|| max(z_acc_P,z_acc_Q)>= max(0.05,y_acc_Q)
+
+            #     TR_max = TR  # Reduce TR
+            #     if TR_max<TR_best
+            #         TR_best=TR_max
+            #         best_acc=max(0,acc)
+            #     end
+            # else
+            #     TR_min = TR  # Increase TR
+            #     # TR_best = TR
+            #     # best_acc=max(0,acc)
+            # end
+        else
+            if z_acc_P>=min(0.05,worst_vio, y_acc_P) || ((y_acc_P<=max(0.00,maximum(Vmax_VP),maximum(-Vmin_VP))-0.01) && max(0,z_acc_Q)>=y_acc_Q && (max(0,z_acc_P)>=y_acc_P)) #|| (y_acc_P<= max(0.1,maximum(Vmax_VP),maximum(-Vmin_VP))-0.1))) #|| z_acc_Q >= worst_vio #|| max(z_acc_P,z_acc_Q)>= max(0.05,y_acc_Q)
+
+                TR_max = TR  # Reduce TR
+                if TR_max<TR_best
+                    TR_best=TR_max
+                    best_acc=max(0,acc)
+                end
+            else
+                TR_min = TR  # Increase TR
+                # TR_best = TR
+                # best_acc=max(0,acc)
+            end
+        end
+        iter+=1
+    end
+    VmaxIndex=findall(Vmaxinrisk)
+    VminIndex=findall(Vmininrisk)
+    display(report_TR)
+    return TR,VmaxIndex,VminIndex,max(0.0,z_acc_Q),[Qinj_up,Qinj_dn],worst_vio,report_TR
 end

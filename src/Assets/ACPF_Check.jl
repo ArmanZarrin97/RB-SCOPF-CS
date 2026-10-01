@@ -147,7 +147,7 @@ function PF_Valid_C(OP_NValid::Dict{String,Any}, Glob) #Array{Union{Float64,Arra
     end
     Vio_Sum = make_vio_sum(Vio_general)
     Avgcost = sum(C_cost, dims=2) ./ nCon
-    return Avgcost, Vio_Sum, OP_Valid, Vio_general
+    return Avgcost, Vio_Sum, OP_Valid, Vio_general,C_cost
 end
 function ST_PF_Valid_C(OP_NValid::Dict{String,Any}, Runcode) #Array{Union{Float64,Array{Float64}}}
     #OP_NValid=OP_init_NV
@@ -240,6 +240,7 @@ function Cascade_Sim(OP_NValid::Dict{String,Any}, Glob,cas_hist=[]) #Array{Union
     casreps=[DataFrame() for _ in 1:nT, _ in 1:nCon]
     OP_Valid=pre_prepration!(Glob,OP_Valid,TSysData;nCon=nCon,nT=nT,C="ConL")
     h_cas=DataFrame(tup=cas_hist,Vio=zeros())
+    comcas=[DataFrame() for _ in 1:nT, _ in 1:nCon]
     Threads.@threads for t = 1:nT
         # println("time step $t :")
         for i = 1:nCon
@@ -259,9 +260,11 @@ function Cascade_Sim(OP_NValid::Dict{String,Any}, Glob,cas_hist=[]) #Array{Union
             CSysData = deepcopy(ASysData)
             # V, θ, p_inj, q_inj, convergence_indicator, Iij, percent, PGGG, QGGG, Jacob = multislack_acpf_order_pmaxqmax(CSysData["Bus"], CSysData["Line"], CSysData["Trans"], CSysData["Gen"], CSysData["Load"], CSysData["Shunt"], CSysData["RES"], CSysData["ESS"], [])
             # V, θ, p_inj, q_inj, convergence_indicator, Iij, percent, PGGG, QGGG, Jacob, LNS_stage = cascading_sim(CSysData["Bus"], CSysData["Line"], CSysData["Trans"], CSysData["Gen"], CSysData["Load"], CSysData["Shunt"],CSysData["RES"],CSysData["ESS"],Int64[];printcascade=true);
-            V, θ, p_inj, q_inj, convergence_indicator, Iij, percent, PGGG, QGGG, Jacob, LNS_stage, casrep = cascading_sim(CSysData["Bus"], CSysData["Line"], CSysData["Trans"], CSysData["Gen"], CSysData["Load"], CSysData["Shunt"],CSysData["RES"],CSysData["ESS"],Int64[]);
+            V, θ, p_inj, q_inj, convergence_indicator, Iij, percent, PGGG, QGGG, Jacob, LNS_stage, casrep, comcas_i = cascading_sim(CSysData["Bus"], CSysData["Line"], CSysData["Trans"], CSysData["Gen"], CSysData["Load"], CSysData["Shunt"],CSysData["RES"],CSysData["ESS"],Int64[]);
             
             @. casrep."VM" = casrep."VM".*I_relax
+            @. casrep."prob"=probdist(casrep."VM")
+            @. comcas_i."VM" = comcas_i."VM".*I_relax
             histelem=findall(x-> x[1]==t && x[3]==i,h_cas.tup)
             hist_line=getindex.(h_cas.tup[histelem],2) 
             hist_line_eq=findall( in(Set(hist_line)),CSysData["Line"].Line_N)
@@ -278,6 +281,7 @@ function Cascade_Sim(OP_NValid::Dict{String,Any}, Glob,cas_hist=[]) #Array{Union
             # casrep.Stage[1]=1
             # casrep.Jcbs[3]
             casreps[t,i]=casrep
+            comcas[t,i]=comcas_i
             # if sum(LNS_stage)!=0
             #     println("time '$(t)' and con '$i'")
             #     println("$(length(LNS_stage)) stage of Cascade cause $(sum(LNS_stage)) p.u. LNS ")
@@ -311,7 +315,7 @@ function Cascade_Sim(OP_NValid::Dict{String,Any}, Glob,cas_hist=[]) #Array{Union
     end
     Vio_Sum = make_vio_sum(Vio_general)
     Avgcost = sum(C_cost, dims=2) ./ nCon
-    return Avgcost, Vio_Sum, OP_Valid, Vio_general,casreps,h_cas
+    return Avgcost, Vio_Sum, OP_Valid, Vio_general,casreps,h_cas, comcas, C_cost
 end
 
 function PF_Valid_C2(OP_NValid::Dict{String,Any}, Runcode) #Array{Union{Float64,Array{Float64}}}
@@ -542,13 +546,13 @@ function AC_PFCheck(OP, Glob,cas_hist=[])
     GC.gc()
     if Problem_Type in ["SCOPF","RBOPF"]
         # AVG_C_cost, Vio_Sum_C, OP_initV, Vio_general_C = ST_PF_Valid_C(OP_init_NV, Runcode)
-        AVG_C_cost, Vio_Sum_C, OP_initV, Vio_general_C = PF_Valid_C(OP_init_NV, Glob)
+        AVG_C_cost, Vio_Sum_C, OP_initV, Vio_general_C, C_cost = PF_Valid_C(OP_init_NV, Glob)
 
         # BSON.@save Glob["Path"]*"../Result/test_temp.bson" OP_initV Glob cas_hist
         # BSON.@load Glob["Path"]*"../Result/test_temp.bson" OP_initV Glob cas_hist
 
-        _, _, _, _, casreps, h_cas = Cascade_Sim(OP_initV, Glob,cas_hist);
-        # AVG_C_cost, Vio_Sum_C, OP_initV, Vio_general_C, casreps = PF_Valid_C2(OP_init_NV, Runcode)
+        AVG_CC_cost, _, OP_initVC, _, casreps, h_cas, comcas, CC_cost = Cascade_Sim(OP_initV, Glob,cas_hist);
+        # AVG_CC_cost, Vio_Sum_C, OP_initV, Vio_general_C, casreps = PF_Valid_C2(OP_init_NV, Runcode)
         
         # Cascade_Sim(OP_init_NV, Runcode);
         if !isempty(findall(x-> sum(x."LNS_T")>0.0, casreps))
@@ -561,10 +565,11 @@ function AC_PFCheck(OP, Glob,cas_hist=[])
         AVG_C_cost = Ncost
         Vio_general_C = 0
         casreps=[]
+        comcas=[]
         h_cas=DataFrame()
     end
     Vio_general_N, Vio_general_C = coupling_violation_check!(Glob, OP_initV, Vio_general_N, Vio_general_C)
-    return Ncost, Vio_Sum_N, Vio_general_N, AVG_C_cost, Vio_Sum_C, OP_initV, Vio_general_C, casreps,h_cas
+    return Ncost, Vio_Sum_N, Vio_general_N, AVG_C_cost, Vio_Sum_C, OP_initV, Vio_general_C, casreps,h_cas, comcas
 end
 
 

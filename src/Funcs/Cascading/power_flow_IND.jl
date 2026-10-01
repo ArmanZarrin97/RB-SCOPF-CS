@@ -11,7 +11,7 @@ function multislack_acpf_order_pmaxqmax3(y_bus_i, B, L, G, Ld, Shu, REN, BAT, or
     QshuntBUS = zeros(Float64, nBus)
     QshuntBUS[ish]  = Shu[:, 2]
 
-    (vmag_i, vang_i, delta_mismatch_inj, mmm_i, p_i, q_i, p_V, q_V, cg_t, pim_i, df_i, fm_i, sm_i, Gs, Bs, itr_i, sij_i, vio_i, Iij, percentIij, is_slack, Jcb) = multislack_acpf_order_V2(y_bus_i, B, L, G, Ld, Shu, REN, BAT, order, ctd)
+    (vmag_i, vang_i, delta_mismatch_inj, mmm_i, p_i, q_i, p_V, q_V, cg_t, pim_i, df_i, fm_i, sm_i, Gs, Bs, itr_i, sij_i, vio_i, vior_i, Iij, percentIij, is_slack, Jcb) = multislack_acpf_order_V2(y_bus_i, B, L, G, Ld, Shu, REN, BAT, order, ctd)
     while exit == 0 && cg_t==1
         # G[:, 2] = p_i[ign] + p_V[ign]
         # G[:, 3] = q_i[ign] + q_V[ign] - QshuntBUS[ign]
@@ -38,10 +38,10 @@ function multislack_acpf_order_pmaxqmax3(y_bus_i, B, L, G, Ld, Shu, REN, BAT, or
             G[non_vio_g, 2] = Gtemp[non_vio_g, 2]
             G[vio_g, 12] = zeros(length(vio_g))
         end
-        (vmag_i, vang_i, delta_mismatch_inj, mmm_i, p_i, q_i, p_V, q_V, cg_t, pim_i, df_i, fm_i, sm_i, Gs, Bs, itr_i, sij_i, vio_i, Iij, percentIij, is_slack, Jcb) = multislack_acpf_order_V2(y_bus_i, B, L, G, Ld, Shu, REN, BAT, order, ctd)
+        (vmag_i, vang_i, delta_mismatch_inj, mmm_i, p_i, q_i, p_V, q_V, cg_t, pim_i, df_i, fm_i, sm_i, Gs, Bs, itr_i, sij_i, vio_i, vior_i, Iij, percentIij, is_slack, Jcb) = multislack_acpf_order_V2(y_bus_i, B, L, G, Ld, Shu, REN, BAT, order, ctd)
     end
 
-    return vmag_i, vang_i, delta_mismatch_inj, mmm_i, p_i, q_i, p_V, q_V, cg_t, pim_i, df_i, fm_i, sm_i, Gs, Bs, itr_i, sij_i, vio_i, Iij, percentIij, is_slack, Jcb
+    return vmag_i, vang_i, delta_mismatch_inj, mmm_i, p_i, q_i, p_V, q_V, cg_t, pim_i, df_i, fm_i, sm_i, Gs, Bs, itr_i, sij_i, vio_i, vior_i, Iij, percentIij, is_slack, Jcb
 end
 
 function multislack_acpf_order_V2(y_bus,
@@ -291,7 +291,7 @@ function multislack_acpf_order_V2(y_bus,
                                                   
     (delta_mismatch_inj, p_inj, q_inj, diff_Tf1, diff_Tfm1, diff_TV1, diff_Gf1, diff_Gfm1, diff_Bf1, diff_Bfm1, p_V, q_V) = mismatch_vectorV_orderINDA2(nBus, isl, ipv, ipq, idu, v_angle_pf, v_mag_pf, df, fm, y_bus, p_sch_pf, q_sch_pf, ki, kip, kiq, PloadBUS, QloadBUS, dp, dq, order, Gs, Bs, Gs0, Bs0, Vi0, ind, Ld_ind, ctd)
    
-    (sij, violated_lines, Iij, percentIij) = line_flow2(L, y_bus, v_mag_pf, v_angle_pf)
+    (sij, violated_lines, atrisk_lines, Iij, percentIij) = line_flow2(L, y_bus, v_mag_pf, v_angle_pf)
    
    
     pim_pf = - sum(ki) * df
@@ -302,7 +302,7 @@ function multislack_acpf_order_V2(y_bus,
 
     G[:, 12]=deepcopy(slk)
 
-    return v_mag_pf, v_angle_pf, delta_mismatch_inj, delta_mismatch, p_inj, q_inj, p_V, q_V, convergence_indicator, pim_pf, df, fm, sm, Gs, Bs, iteration,sij, violated_lines, Iij, percentIij, is_slack, JacobOut
+    return v_mag_pf, v_angle_pf, delta_mismatch_inj, delta_mismatch, p_inj, q_inj, p_V, q_V, convergence_indicator, pim_pf, df, fm, sm, Gs, Bs, iteration,sij, violated_lines, atrisk_lines, Iij, percentIij, is_slack, JacobOut
 
 end
 

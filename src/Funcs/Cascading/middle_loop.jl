@@ -79,6 +79,7 @@ function total_i(B, L, T, G, Ld, Shu, REN, BAT, Gcas)
                 end
             end
         end
+        # println((Gcas.RC)')
     end
 
     # ><><><><><><><><><><><><><><><><><><><><><><><><

@@ -2,7 +2,7 @@ import Pkg; Pkg.activate("ST-SCOPF");
 Pkg.instantiate()
 # Pkg.update()
 # Pkg.resolve()
-using JuMP,BSON, SparseArrays, Ipopt,OdsIO, DataFrames, Plots,LinearAlgebra,JLD2,PlotThemes,Random,Statistics,CPLEX,HiGHS,HSL_jll, ProgressLogging,BenchmarkTools,Profile,Base.Threads,SplitApplyCombine,CairoMakie #, ProfileCanvas, ProfileView,Cthulhu
+using KLU,JuMP,BSON, SparseArrays, Ipopt,OdsIO, DataFrames, Plots,LinearAlgebra,JLD2,PlotThemes,Random,Statistics,CPLEX,HiGHS,HSL_jll, ProgressLogging,BenchmarkTools,Profile,Base.Threads,SplitApplyCombine,CairoMakie #, ProfileCanvas, ProfileView,Cthulhu
 #********************************************************************************************************************
 # JuMP: Modeling Optimization Problem
 #Ipopt: Optimization solver paccage

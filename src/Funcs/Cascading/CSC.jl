@@ -1,12 +1,15 @@
 # In the name of Allah, the most beneficint, the most merciful
 
 function CSC(B::DataFrame, L::DataFrame, T::DataFrame, G::DataFrame, Ld::DataFrame, Shu::DataFrame, REN::DataFrame, BAT::DataFrame, Lout::Vector{Int64},Gcas)
-    # B, L, T, G, Ld, Shu, Lout=Bs, Ls, Ts, Gs, Lds, Shus, Lout
-    casrep=DataFrame(Stage=[], LL=[],VM=[], LNS_V=[], LNS_F=[], LNS_T=[], Jcbs=[],busset=[],LNSset=[], Vmag=[], Vang=[])
+    # B, L, T, G, Ld, Shu, REN, BAT, Lout=deepcopy(Bs), deepcopy(Ls), deepcopy(Ts), deepcopy(Gs), deepcopy(Lds), deepcopy(Shus), deepcopy(RENs), deepcopy(BATs), Int64[]
+    casrep=DataFrame(Stage=[], LL=[],VM=[], prob=[], LNS_V=[], LNS_F=[], LNS_T=[], GT=[], RC=[], BT=[], Sev=[], Jcbs=[],busset=[],LNSset=[], Vmag=[], Vang=[])
+    comcas_i=DataFrame(Stage=[], LL=[],VM=[], Jcbs=[],busset=[], Vmag=[], Vang=[])
     Rn = []
     Lvio = []
+    Lvior=[]
     convergence=0
     Lvio_stage = []
+    Lvior_stage = []
     Lvio_tot = []
     H = 1
     u = []
@@ -32,7 +35,9 @@ function CSC(B::DataFrame, L::DataFrame, T::DataFrame, G::DataFrame, Ld::DataFra
         for i = 1:n_i
             main_name_L = r[i]["Line_i"]
             Lvio_stage = r[i]["vio_i"]
+            Lvior_stage = r[i]["vior_i"]
             Lvio = main_name_L[r[i]["vio_i"]]
+            Lvior= main_name_L[r[i]["vior_i"]]
             convergence= r[i]["cg_i"]
         end
         push!(Rn, r)
@@ -40,9 +45,12 @@ function CSC(B::DataFrame, L::DataFrame, T::DataFrame, G::DataFrame, Ld::DataFra
         push!(Line_vio, Lvio)
 
         LNSset=Gcas.Ldsh_f.+Gcas.Ldsh_v
-        LNS_f = sum(Gcas.Ldsh_f) 
-        LNS_v = sum(Gcas.Ldsh_v) 
+        LNS_f = sum(Gcas.Ldsh_f)
+        LNS_v = sum(Gcas.Ldsh_v)
         LNS = LNS_f + LNS_v
+        GT= sum(Gcas.Gt,init=0.0)
+        BT= sum(Gcas.BT_L,init=0.0)+sum(Gcas.BT_G,init=0.0)
+        RC= sum(Gcas.RC,init=0.0)
         Lvio_tot = union(Lvio_tot, Lvio, Lout)
         Lvio_tot = sort(Lvio_tot)
         notLres_tot=findall( in(Set(Lvio_tot)),Li."Line_N")
@@ -52,13 +60,22 @@ function CSC(B::DataFrame, L::DataFrame, T::DataFrame, G::DataFrame, Ld::DataFra
         # push!(casrep,[H-1 [Lvio] [if n_i==0; [] else r[n_i]["percentIij"][Lvio_stage] end] LNS_v LNS_f LNS [Jcb] [if n_i==0; [] else r[n_i]["Bus_i"] end] [LNSset] [if n_i==0; [] else r[n_i]["vmag_i"] end] [if n_i==0; [] else r[n_i]["vang_i"] end]])
         if n_i==0 || convergence==0
             LNS= sum(Ld[:,2])
-            push!(casrep,[H-1 [Lvio] [[]] LNS_v LNS_f LNS [Jcb] [[]] [LNSset] [[]] [[]]])
+            GT= sum(G[:,2])
+            RC= sum(REN[:,2])
+            BT= sum(BAT[:,2])
+            Sev=SEVF(LNS, GT, RC, BT)
+            push!(casrep,[H-1 [Lvio] [[]] 1 LNS_v LNS_f LNS GT RC BT Sev [Jcb] [[]] [LNSset] [[]] [[]]])
+            # push!(comcas_i,[H-1 [Lvior] [[]][Jcb] [[]] [[]] [[]]])
             if Gcas.print
                 printstyled("No Powerflow solution"; color=:10, blink=true)
             end
             break
         else
-            push!(casrep,[H-1 [Lvio] [r[n_i]["percentIij"][Lvio_stage]] LNS_v LNS_f LNS [Jcb] [r[n_i]["Bus_i"]] [LNSset] [r[n_i]["vmag_i"]] [r[n_i]["vang_i"]]])
+            Sev=SEVF(LNS, GT, RC, BT)
+            push!(casrep,[H-1 [Lvio] [r[n_i]["percentIij"][Lvio_stage]] 1 LNS_v LNS_f LNS GT RC BT Sev [Jcb] [r[n_i]["Bus_i"]] [LNSset] [r[n_i]["vmag_i"]] [r[n_i]["vang_i"]]])
+            # push!(casrep,[H-1 [Lvio] [r[n_i]["percentIij"][Lvio_stage]] LNS_v LNS_f LNS [Jcb] [r[n_i]["Bus_i"]] [LNSset] [r[n_i]["vmag_i"]] [r[n_i]["vang_i"]]])
+            push!(comcas_i,[H-1 [Lvior] [r[n_i]["percentIij"][Lvior_stage]] [Jcb] [r[n_i]["Bus_i"]] [r[n_i]["vmag_i"]] [r[n_i]["vang_i"]]])
+
         end
         # push!(casrep,[H-1 [Lvio] [r[n_i]["percentIij"][Lvio_stage]] LNS_v LNS_f LNS [Jcb] [r[n_i]["Bus_i"]] [LNSset] [r[n_i]["vmag_i"]] [r[n_i]["vang_i"]]])
 
@@ -116,6 +133,9 @@ function CSC(B::DataFrame, L::DataFrame, T::DataFrame, G::DataFrame, Ld::DataFra
 
     Gcas.Ldsh_v[1:size(Ld, 1)] = zeros(size(Ld, 1))
     Gcas.Ldsh_f[1:size(Ld, 1)] = zeros(size(Ld, 1))
+    # Gcas.Gt[1:size(G, 1)] = zeros(size(G, 1))
+    # Gcas.RC[1:size(REN, 1)] = zeros(size(REN, 1))
+    # Gcas.BT[1:size(BAT, 1)] = zeros(size(BAT, 1))
 
-    return Rn, H, u, B, L, T, G, Ld, Shu, new_L, LNS_v, LNS_f, LNS, tot_L, Line_vio, LNS_stage, JCB, casrep
+    return Rn, H, u, B, L, T, G, Ld, Shu, new_L, LNS_v, LNS_f, LNS, tot_L, Line_vio, LNS_stage, JCB, casrep, comcas_i
 end

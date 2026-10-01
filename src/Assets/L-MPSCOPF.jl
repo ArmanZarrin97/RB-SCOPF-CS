@@ -3,7 +3,7 @@ include("../Funcs/SCOPF/L_Model_Build.jl")
 include("../Funcs/SCOPF/L_PowerFlow.jl")
 
 # export L_MPSCOPF
-function L_MPSCOPF(Glob,glob_input,Proffin,casreps,h_cas=DataFrame(); fixed_SOC_=1,conprob=0.05,OPFon=0,Winit=0,t0=1,WP=1,LinMethod="None",Lininit=Dict{String,Any}(),relaxconfac=0.0,optimal_tcs=nothing) #Array{Union{Float64,Array{Float64}}} # WP: without Penalty #OPFon: 0=>SCOPF, 1=>OPF #Winit: 0=>No initial value, 1=>Initial value #t0: first time period # fixed_SOC_: 0=>No fixed SOC, 1=>Fixed SOC # conprob: contingency probability summation # Proffin: Profile information
+function L_MPSCOPF(Glob,glob_input,Proffin,casreps,h_cas=DataFrame(),comcas=DataFrame(); fixed_SOC_=1,conprob=0.05,OPFon=0,Winit=0,t0=1,WP=1,LinMethod="None",Lininit=Dict{String,Any}(),relaxconfac=0.0,optimal_tcs=nothing) #Array{Union{Float64,Array{Float64}}} # WP: without Penalty #OPFon: 0=>SCOPF, 1=>OPF #Winit: 0=>No initial value, 1=>Initial value #t0: first time period # fixed_SOC_: 0=>No fixed SOC, 1=>Fixed SOC # conprob: contingency probability summation # Proffin: Profile information
     # casreps=nothing
     #conprob=conprob_;LinMethod=LinMethod;Lininit=OP_init
     #Winit=0;t0=1;WP=1;
@@ -28,9 +28,9 @@ function L_MPSCOPF(Glob,glob_input,Proffin,casreps,h_cas=DataFrame(); fixed_SOC_
     LSCOPF,N_Var=Normal_PB(Glob,TD, LSCOPF,nTP,raw,initraw,ctdall,fixed_SOC,Proffin,Winit,initial,LinMethod,Lininit);
 
     # ------------------- Cascade Model -----------------------------
-    if (OPFon==0 && raw["nConL"]!=0 && (!isnothing(casreps) || !isempty(h_cas)) && LinMethod == "SENS")
-        LSCOPF, CascadeInfo=Cascade_L_PB(LSCOPF,nTP,raw,casreps,h_cas,Lininit,Glob);
-        CascadeInfo["optimal_tcs"]=optimal_tcs
+    if Glob["Cascade_Opt"] && (OPFon==0 && raw["nConL"]!=0 && (!isnothing(casreps) || !isempty(h_cas) || !isnothing(comcas)) && LinMethod == "SENS")
+        LSCOPF, CascadeInfo=Cascade_L_PB(LSCOPF,nTP,raw,casreps,h_cas,comcas,Lininit,Glob,optimal_tcs);
+        # CascadeInfo["optimal_tcs"]=optimal_tcs
         # CascadeInfo=Dict()
         # LSCOPF[:CascadeInfo]=CascadeInfo
 
@@ -55,7 +55,7 @@ function L_MPSCOPF(Glob,glob_input,Proffin,casreps,h_cas=DataFrame(); fixed_SOC_
         LSCOPF[:acc]=[0.0 0.0]
     end
     ##------------------ Setting Objective Function ---------------------
-    LSCOPF=Objective_function(TD, LSCOPF,CascadeInfo,nTP,raw,initraw,Proffin,N_Var,C_Var,sl_F,sl_V,t0,Lininit,LinMethod;lambda=conprob,OPFon=OPFon,WP=WP)
+    LSCOPF=Objective_function(Glob, TD, LSCOPF,CascadeInfo,nTP,raw,initraw,Proffin,N_Var,C_Var,sl_F,sl_V,t0,Lininit,LinMethod;lambda=conprob,OPFon=OPFon,WP=WP)
     # #----------------Solve and Results --------------------------------------
     # # @constraint(LSCOPF,C_acc, LSCOPF[:slk_Cont]<=0.9)
     # @info "Model is ready"
@@ -79,6 +79,7 @@ function L_MPSCOPF(Glob,glob_input,Proffin,casreps,h_cas=DataFrame(); fixed_SOC_
     # resu=DataFrame(obj=objective_value(SCOPF),real_objective_cas=value(SCOPF[:real_objective_cas]),real_objective=value(SCOPF[:real_objective]),cost_TR_relaxN=value(SCOPF[:cost_TR_relaxN]),cost_TR_PenN=value(SCOPF[:cost_TR_PenN]),cost_TR_relaxC=value(SCOPF[:cost_TR_relaxC]),cascade_penalty=value(SCOPF[:cascade_penalty]))
     # push!(resu, (objective_value(SCOPF),value(SCOPF[:real_objective_cas]),value(SCOPF[:real_objective]),value(SCOPF[:cost_TR_relaxN]),value(SCOPF[:cost_TR_PenN]),value(SCOPF[:cost_TR_relaxC]),value(SCOPF[:cascade_penalty])))
 
+    # fix(LSCOPF[:bin_Cas][(18,4,1)],1;force=true)
     LSCOPF=Solve_P(LSCOPF)
     # value.(LSCOPF[:CV2magexp])[1,38,1]
     # LSCOPF[:CV2magexp][1,38,1]
