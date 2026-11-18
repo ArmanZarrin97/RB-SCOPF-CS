@@ -60,9 +60,9 @@ function CSC(B::DataFrame, L::DataFrame, T::DataFrame, G::DataFrame, Ld::DataFra
         # push!(casrep,[H-1 [Lvio] [if n_i==0; [] else r[n_i]["percentIij"][Lvio_stage] end] LNS_v LNS_f LNS [Jcb] [if n_i==0; [] else r[n_i]["Bus_i"] end] [LNSset] [if n_i==0; [] else r[n_i]["vmag_i"] end] [if n_i==0; [] else r[n_i]["vang_i"] end]])
         if n_i==0 || convergence==0
             LNS= sum(Ld[:,2])
-            GT= sum(G[:,2])
-            RC= sum(REN[:,2])
-            BT= sum(BAT[:,2])
+            GT= sum(G[:,7])
+            RC= sum(REN[:,3];init=0.0)
+            BT= sum(BAT[:,2];init=0.0)
             Sev=SEVF(LNS, GT, RC, BT)
             push!(casrep,[H-1 [Lvio] [[]] 1 LNS_v LNS_f LNS GT RC BT Sev [Jcb] [[]] [LNSset] [[]] [[]]])
             # push!(comcas_i,[H-1 [Lvior] [[]][Jcb] [[]] [[]] [[]]])

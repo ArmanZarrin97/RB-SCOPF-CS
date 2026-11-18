@@ -234,32 +234,35 @@ elseif LinMethod=="SENS"
         @expression(SCOPF,cost_TR_PenC, 0)
         @expression(SCOPF,cost_TR_relaxC, 0)
     end
-    if Glob["Risk_cascade"]=="RSS"
+    if Glob["Risk_cascade"]=="RSS" && Glob["Cascade_Opt"]
 
         # rcas_OP=(1 .-SCOPF[:bin_Cas]).*CascadeInfo["LNS_tc"]+ (1 .-SCOPF[:pbd]).*CascadeInfo["LNS_tc0"]+ SCOPF[:pbd].*CascadeInfo["LNS_tc"]
         # rcas_OP=(1 .-SCOPF[:pbd]).*CascadeInfo["LNS_tc0"]+ SCOPF[:pbd].*CascadeInfo["LNS_tc"]
-        rcas_OP=(1 .-SCOPF[:pbd]).*CascadeInfo["Sev_tc0"]+ SCOPF[:pbd].*CascadeInfo["Sev_tc"]
+        rcas_OP=(1 .-SCOPF[:pbd]).*CascadeInfo["Sev_tc0"]+ SCOPF[:pbd].*CascadeInfo["Esev_tc_end"]
+        rcas_OP0= CascadeInfo["R_OP0"]
+        R_sys0 = CascadeInfo["R_sys0"]
 
         @expression(SCOPF,rcas_OP, rcas_OP)
-        @expression(SCOPF,Rcas_sys, sum(α_t[t] * Prob_c[c]* rcas_OP[(t,c)] for (t,c) in CascadeInfo["tups"] )) #* 0.001
-        @constraint(SCOPF,rcas_OP_con, rcas_OP.<=Glob["R_OP_max"].* (1 .+ SCOPF[:slk_R_OP]))
-        @constraint(SCOPF,Rcas_sys_con, Rcas_sys<=Glob["R_Sys_max"]* (1 +SCOPF[:slk_R_Sys]))
-        @expression(SCOPF,cas_relaxC,0* (coef1) * sumJuMPi(SCOPF[:slk_R_OP]))
-
+        @expression(SCOPF,Rcas_sys, sum(α_t[t] * lambda* Prob_c[c]* rcas_OP[(t,c)] for (t,c) in CascadeInfo["tups"] )) #* 0.001
+        @constraint(SCOPF,rcas_OP_con, rcas_OP.<=Glob["R_OP_max"].+ (max(Glob["R_OP_max"],(rcas_OP0.-Glob["R_OP_max"])).* (SCOPF[:slk_R_OP])))
+        # @constraint(SCOPF,rcas_OP_con, rcas_OP.<=1.5* Glob["R_OP_max"])
+        @constraint(SCOPF,Rcas_sys_con, Rcas_sys<=Glob["R_Sys_max"].+ (max(Glob["R_Sys_max"],(R_sys0.-Glob["R_Sys_max"])).* (SCOPF[:slk_R_Sys])))
         @variable(SCOPF,Worst_slk_cas1>=0)
         @variable(SCOPF,Worst_slk_cas2>=0)
         # @variable(SCOPF,Worst_slk_cas3>=0)
-        # @constraint(SCOPF,C_worst_slk_cas1,Worst_slk_cas1.>=SCOPF[:slk_R_OP])
-        # @constraint(SCOPF,C_worst_slk_cas2,Worst_slk_cas2>=SCOPF[:slk_R_Sys])
+        @constraint(SCOPF,C_worst_slk_cas1,Worst_slk_cas1.>=SCOPF[:slk_R_OP])
+        # @constraint(SCOPF,C_worst_slk_cas2,Worst_slk_cas2 .>= SCOPF[:slk_cas_r].-SCOPF[:pbd])
+        @constraint(SCOPF,C_worst_slk_cas3, SCOPF[:pbd] .>= SCOPF[:slk_cas_r])
         # @constraint(SCOPF,C_worst_slk_cas3,Worst_slk_cas3.>=SCOPF[:slk_R_Limit])
 
         # @expression(SCOPF,Worst_slk_cas3, sum(SCOPF[:slk_R_Limit]))
-
-        @expression(SCOPF,cascade_penalty, 0) #* 0.001
-        @expression(SCOPF,Cascade_Risk_cost, 0*Rcas_sys*coef6)
-        # @expression(SCOPF,Cascade_Risk_cost, 0)
-
-        @expression(SCOPF,Worst_slk_Pen, 0* (Worst_slk_cas1+Worst_slk_cas2)*coef6 +cas_relaxC)
+        asind_penalty=sum(SCOPF[:slk_R_OP];init=0)
+        @expression(SCOPF, asind_penalty, asind_penalty)
+        @expression(SCOPF,cascade_penalty, sum(SCOPF[:slk_cas_r].* 1.2 .* CascadeInfo["Sev_tc"];init=0)+ asind_penalty*coef4*0.8) #* 0.001
+        @expression(SCOPF,Cascade_Risk_cost, Rcas_sys*coef6/10)
+        @expression(SCOPF,Worst_slk_Pen, (Worst_slk_cas1 +SCOPF[:slk_R_Sys])*coef4*0.9)
+        # @expression(SCOPF,Cascade_Risk_cost, Rcas_sys*coef6)
+        # @expression(SCOPF,Worst_slk_Pen, (Worst_slk_cas1+SCOPF[:slk_R_Sys])*coef4*0.8)
 
     elseif haskey(SCOPF.obj_dict,:bin_Cas) && !isempty(SCOPF[:bin_Cas])
         if Glob["Risk_cascade"]=="MS"
@@ -272,7 +275,7 @@ elseif LinMethod=="SENS"
         @expression(SCOPF,Worst_slk_Pen, 0)
         @expression(SCOPF,Cascade_Risk_cost, 0)
     elseif haskey(SCOPF.obj_dict,:slk_cas) && !isempty(SCOPF[:slk_cas])
-        cascade_penalty=sum(SCOPF[:slk_cas].*CascadeInfo["LNS_tc"]).*coef6
+        cascade_penalty=sum(SCOPF[:slk_cas].*CascadeInfo["Sev_tc"]).*coef6
         @expression(SCOPF,cascade_penalty, cascade_penalty)
         @variable(SCOPF,Worst_slk_cas>=0)
         @constraint(SCOPF,C_worst_slk_cas,Worst_slk_cas.>=SCOPF[:slk_cas])
@@ -283,9 +286,9 @@ elseif LinMethod=="SENS"
         @expression(SCOPF,cascade_penalty, 0.0)
         @expression(SCOPF,Cascade_Risk_cost, 0)
     end
-    @expression(SCOPF,real_objective_cas, real_objective +Cascade_Risk_cost + lambda*singleconprob*(cascade_penalty+Worst_slk_Pen))
+    @expression(SCOPF,real_objective_cas, real_objective +Cascade_Risk_cost + lambda*singleconprob*(cascade_penalty))
     # @objective(SCOPF, Min,  real_objective +cost_TR_relaxN+cost_TR_PenN+cost_TR_relaxC+ lambda*singleconprob*(cost_TR_PenC+cascade_penalty))
-    @objective(SCOPF, Min,  real_objective_cas +cost_TR_relaxN+cost_TR_PenN+cost_TR_relaxC + lambda*singleconprob*(cost_TR_PenC))
+    @objective(SCOPF, Min,  real_objective_cas +cost_TR_relaxN+cost_TR_PenN+cost_TR_relaxC +Worst_slk_Pen+ lambda*singleconprob*(cost_TR_PenC))
     #cascade_penalty
 
     # @objective(SCOPF, Min,  0)
@@ -839,6 +842,8 @@ function Cascade_L_PB( SCOPF::Model,nTP::Int64,raw::Dict{String, Any},casreps::M
     # casreps[cas_tc]
     tups = [ci.I for ci in cas_tc]
     cas_stg = size.(casreps[cas_tc],1)
+    R_sys0=0.0
+    R_OP0=0.0
 
     # tu=tups[1]
     result = [(ci.I..., stg) for (ci, stg) in zip(cas_tc, cas_stg)]
@@ -849,6 +854,7 @@ function Cascade_L_PB( SCOPF::Model,nTP::Int64,raw::Dict{String, Any},casreps::M
     LNS_tc0= [casreps[i,j][1,"LNS_T"] for (i,j) in tups]
     Sev_tc= [SEVF_casreps(casreps[i,j]) for (i,j) in tups]
     Sev_tc0= [SEVF_casreps(casreps[i,j], stage=1) for (i,j) in tups]
+    Esev_tc_end=[ESEV_casrep(casreps[i,j];sbegin=2) for (i,j) in tups]
 
     ϵ_vm=1e-3
     Imaxlimit0=(raw["Line"]."RATE_A") .^ 2
@@ -879,6 +885,7 @@ function Cascade_L_PB( SCOPF::Model,nTP::Int64,raw::Dict{String, Any},casreps::M
     ΔPinj=SCOPF[:ΔPinjP]-SCOPF[:ΔPinjN]
     ΔQinj=SCOPF[:ΔQinjP] -SCOPF[:ΔQinjN]
     diffVm= (Vm_Cascade.^2) .- ((I_relax-(ϵ_vm*1)).^2)
+    diffVm_r= (Vm_Cascade.^2) .- ((I_relaxmax-(ϵ_vm*1)).^2)
     # println(keys(Lininit))
 
     @expression(SCOPF, Vm_Cascade_expr[k=1:length(line_Cascade)], Vm_Cascade[k])
@@ -900,12 +907,20 @@ function Cascade_L_PB( SCOPF::Model,nTP::Int64,raw::Dict{String, Any},casreps::M
         @constraint(SCOPF, CNcascade_LP1[k=1:length(idx_f)], (SENS_Cascade[idx_f[k],:])'*[ΔPinj ΔQinj][tcs_Cascade[idx_f[k]][1],:] <= (-diffVm[idx_f[k]])*Imaxlimit0[line_Cascade[idx_f[k]]] + 2000*Imaxlimit0[line_Cascade[idx_f[k]]]*(1-bin_Cas[(tcs_Cascade[idx_f[k]][1],tcs_Cascade[idx_f[k]][2])]))
     elseif Risk_cascade=="RSS"
         # @variable(SCOPF, bin_Cas[(t,c) in tups] >= 0,start=1,Bin)
-        @variable(SCOPF, 0<=pbd[(t,c) in tups]<=10,start=0.0)
+        rsss=Rcas_cal(casreps)
+        R_sys0= rsss[1][3]
+        R_OP0= rsss[2][3]
+
+        @variable(SCOPF, 0<=pbd[(t,c) in tups]<=1,start=0.0)
         @variable(SCOPF, 0<=slk_R_OP[(t,c) in tups],start=0.0)
         @variable(SCOPF, 0<=slk_R_Sys,start=0.0)
+        @variable(SCOPF, slk_cas_r[(t,c) in tups] >= 0)
         @variable(SCOPF, 0<=slk_R_Limit[(t,c) in tups],start=0.0)
         idx_f=findall(((t,c,s),) -> s==1, tcs_Cascade[:,1])
-        @constraint(SCOPF, CNcascade_LP1[k=1:length(idx_f)], (SENS_Cascade[idx_f[k],:])'*[ΔPinj ΔQinj][tcs_Cascade[idx_f[k]][1],:] <= (-diffVm[idx_f[k]])*Imaxlimit0[line_Cascade[idx_f[k]]]+ pbd[(tcs_Cascade[idx_f[k]][1],tcs_Cascade[idx_f[k]][2])]*Imaxlimit0[line_Cascade[idx_f[k]]]* (I_relaxmax-I_relax))#+ slk_R_Limit[(tcs_Cascade[idx_f[k]][1],tcs_Cascade[idx_f[k]][2])]* Imaxlimit0[line_Cascade[idx_f[k]]] ) #+ 2000*Imaxlimit0[line_Cascade[idx_f[k]]]*(1-bin_Cas[(tcs_Cascade[idx_f[k]][1],tcs_Cascade[idx_f[k]][2])]))
+        @constraint(SCOPF, CNcascade_LP1[k=1:length(idx_f)], (SENS_Cascade[idx_f[k],:])'*[ΔPinj ΔQinj][tcs_Cascade[idx_f[k]][1],:] <=   (-diffVm[idx_f[k]])*Imaxlimit0[line_Cascade[idx_f[k]]]
+                                                                                                                                        + (diffVm[idx_f[k]])*Imaxlimit0[line_Cascade[idx_f[k]]]* (slk_cas_r[(tcs_Cascade[idx_f[k]][1],tcs_Cascade[idx_f[k]][2])])
+                                                                                                                                        + pbd[(tcs_Cascade[idx_f[k]][1],tcs_Cascade[idx_f[k]][2])]*Imaxlimit0[line_Cascade[idx_f[k]]]* (I_relaxmax-I_relax)
+                                                                                                                                        )#+ slk_R_Limit[(tcs_Cascade[idx_f[k]][1],tcs_Cascade[idx_f[k]][2])]* Imaxlimit0[line_Cascade[idx_f[k]]] ) #+ 2000*Imaxlimit0[line_Cascade[idx_f[k]]]*(1-bin_Cas[(tcs_Cascade[idx_f[k]][1],tcs_Cascade[idx_f[k]][2])]))
         @constraint(SCOPF, CNcascade_LP3[k=1:length(idx_f)], (SENS_Cascade[idx_f[k],:])'*[ΔPinj ΔQinj][tcs_Cascade[idx_f[k]][1],:] <= 0 )
     else
         # @constraint(SCOPF,CNcas_bin[(t,c) in tups], bin_Cas[(t,c,1)] == 1)
@@ -920,7 +935,7 @@ function Cascade_L_PB( SCOPF::Model,nTP::Int64,raw::Dict{String, Any},casreps::M
         # end
     end
     # fix.(slk_cas, 1; force=true)
-    CascadeInfo=Dict("I_relax"=>I_relax,"Vm_Cascade"=> Vm_Cascade,"diffVm"=>diffVm,"tcs_Cascade"=>tcs_Cascade, "SENS_Cascade"=>SENS_Cascade, "line_Cascade"=>line_Cascade, "LNS_Cascade"=>LNS_Cascade, "LNS_tc"=>LNS_tc, "LNS_tc0"=>LNS_tc0, "Sev_tc"=>Sev_tc, "Sev_tc0"=>Sev_tc0, "tups"=>tups, "optimal_tcs"=>optimal_tcs)
+    CascadeInfo=Dict("I_relax"=>I_relax,"Vm_Cascade"=> Vm_Cascade,"diffVm"=>diffVm,"tcs_Cascade"=>tcs_Cascade, "SENS_Cascade"=>SENS_Cascade, "line_Cascade"=>line_Cascade, "LNS_Cascade"=>LNS_Cascade, "LNS_tc"=>LNS_tc, "LNS_tc0"=>LNS_tc0, "Sev_tc"=>Sev_tc, "Sev_tc0"=>Sev_tc0, "Esev_tc_end"=>Esev_tc_end, "tups"=>tups, "optimal_tcs"=>optimal_tcs,"R_sys0"=>R_sys0,"R_OP0"=>R_OP0)
     SCOPF[:CascadeInfo]=CascadeInfo
 
     if !isempty(h_cas)

@@ -13,7 +13,7 @@ include("Funcs/Cascading/Cascading_tool.jl")
 
 Problem_Type="SCOPF";Ptype_="DA";
 #---------------------Reading Input files
-Test_Sys="Nordic60/";nTL=24;TS=1; Report="feasiblity"# temporary values
+Test_Sys="Polish/";nTL=8;TS=1; Report="feasiblity"# temporary values
 ERORR=Dict(); ERORR["DA"]=[0.00 0.00];ERORR["RT"]=[0.00 0.00];new_profile=[true true];printlevel=[1 0]; #[terminal print, ods print];
 Glob=Set_global_parameters1(Test_Sys)
 
@@ -27,6 +27,8 @@ if Test_Sys=="Polish/"
     Q_con_percent_coupled=0.01; P_con_percent_coupled=0.01;
     Pen_S=0.0001 *24/nTL; Pen_W=0.1 *24/nTL # Penalty factors in the objective function
     genprox=50
+    Glob["I_relax"]=1.02
+    Glob["I_relaxmax"]=1.4
 elseif Test_Sys=="39bus/"
     Q_eff=2; P_eff=4;
     Q_con_percent=0.08; P_con_percent=0.05;
@@ -54,7 +56,7 @@ relaxpermit=true
 Glob["relaxpermit"]=true
 Glob["monte_carlo"]=false
 Glob["Cascade_Opt"]=true # true: CA-SCOPF, false: SCOPF
-Glob["Risk_cascade"]= "false" # MS: Multistage control, SS: single stage control, RSS: risk-based single stage control, false: deterministic control
+Glob["Risk_cascade"]= "RSS" # MS: Multistage control, SS: single stage control, RSS: risk-based single stage control, false: deterministic control
 include("Assets/Risk.jl")
 
 prefix = if Glob["Cascade_Opt"]
@@ -81,7 +83,8 @@ insertcols!(SLP_Rep, :Max_C_redis, :Max_C_redisQ => ["-"], after=true)
 # BSON.@load Path*"../Result/NL_Solution_Ramp3.bson" Init_OP SLP_Rep
 
 Snapshots=Dict()
-Runcode=(6,3)
+FigCons_rec=Dict()
+Runcode=(3,3)
 OP_NLP=Init_OP["Exact"]
 for Runcode in [ (3,3) (6,3) (4,3) (5,3) ] #(3,1) (4,1) (5,1) (6,1) (4,3) (5,3) (2,1) (2,3) (1,1) (2,1) (3,1) (4,1) (5,1) (6,1) (7,1) $#(2,3) (3,3) (4,3) (1,1) (1,3) (5,1) (5,3) (2,1) (3,1) (4,1) (5,1) 
     Glob["Runcode"]=Runcode
@@ -103,9 +106,10 @@ for Runcode in [ (3,3) (6,3) (4,3) (5,3) ] #(3,1) (4,1) (5,1) (6,1) (4,3) (5,3) 
         end
     end
 
-    mincost,Best_solution,iter,min_infmax_N,min_infmax_C,minOptGap,Best_vio_general_N,Best_vio_sum_N,Best_vio_general_C,Best_vio_sum_C,sol_time,restoration_time,Best_Cas_MW, Best_Cas_MW_mean,Cascade_snapshots= SLA_RCAS(Glob,OP_init0,OP_NLP;BItermax=7)
+    mincost,Best_solution,iter,min_infmax_N,min_infmax_C,minOptGap,Best_vio_general_N,Best_vio_sum_N,Best_vio_general_C,Best_vio_sum_C,sol_time,restoration_time,Best_Cas_MW, Best_Cas_MW_mean,Cascade_snapshots,FigCons= SLA_RCAS(Glob,OP_init0,OP_NLP;BItermax=7)
 
     Snapshots[Runcode]=Cascade_snapshots
+    FigCons_rec[Runcode]=FigCons
     if Test_Sys in ["39bus/", "Nordic60/"]
         makecasfig(Runcode,Cascade_snapshots,Glob["Path"];prefix=prefix)
     end
@@ -116,6 +120,8 @@ end
 # BSON.@save Glob["Path"]*"../Result/Cascade_Snapshots.bson" Snapshots
 push!(SLP_Rep,repeat(["end"],size(SLP_Rep,2)))
 ods_write(Glob["Path"]*"../Result/LIN_Sum_"*prefix*Problem_Type,Dict(("General",1,1)=>SLP_Rep))
+
+# BSON.@save Glob["Path"]*"../Result/FigCons_rec.bson" FigCons_rec
 
 
 # BSON.@load Glob["Path"]*"../Result/Cascade_Snapshots.bson" Snapshots

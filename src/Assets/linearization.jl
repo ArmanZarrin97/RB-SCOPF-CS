@@ -1414,8 +1414,6 @@ function SLA_RCAS(Glob,OP_init0,OP_NLP;BItermax=4)
 
 
     cost0=Ncost0.+(AVG_C_cost0.-Ncost0)*Glob["conprob_"]
-    #sum(Ncost0)
-    #sum((AVG_C_cost0.-Ncost0))
     mincost=sum(cost0);minOptGap= 100*((sum(cost0)-OP_NLP["obj"])/(OP_NLP["obj"]))
     min_infmax_N=maximum(Vio_Sum_N0."Max")
     if Problem_Type in ["SCOPF", "RBOPF"] Best_vio_general_C=Vio_general_C0;Best_vio_sum_C=Vio_Sum_C0;min_infmax_C=maximum(Vio_Sum_C0."Max")
@@ -1430,24 +1428,8 @@ function SLA_RCAS(Glob,OP_init0,OP_NLP;BItermax=4)
     Rcas_NLP,R_OP_max_NLP = Rcas_cal(casreps_NLP)
 
     Iter_Rep=Make_Iter_report(OP_NLP,LNS_cas_NLP,Rcas_NLP)
-    # Vio_general_N=Best_vio_general_N;Vio_general_C=Best_vio_general_C;OP=Best_solution
-    # Best_solution["acc"]=[0.0 0.0]
-
-
-
     Iter_Rep=Add_Iter_report!(Glob,Iter_Rep,Best_solution,mincost,minOptGap,Best_vio_sum_N,Best_vio_sum_C,Best_vio_general_N,Best_vio_general_C,iter,LNS_cas0,Rcas0,0,0,[[0 0] [0 0] [0 0] [0 0]])
-    # if Runcode[1]==2
-    #     Best_vio_general_C=0; Best_vio_sum_C=0
-    #     mincost=1e100;minOptGap=10000;min_infmax_N=100
-    #     if Problem_Type in ["SCOPF", "RBOPF"] min_infmax_C=1e100 else min_infmax_C=0 end
-    # end
-    #New
     Vio_general_C=Vio_general_C0;Vio_general_N=Vio_general_N0
-
-    # Vio_general_C0[6,2]
-    # sum(sum.([sum.(Vio_general_N[t,1]."percent") for t=1:nTP]))
-    # Normal_infeasibility=0;
-    # Contingency_infeasibility=0
     OP_Valid=Dict{String, Any}();cost=0;OptGap=0;Maxvio_C=0;Maxvio_N=0;Vio_Sum_C=0;Vio_Sum_N=0;Cas_MW_max=0;Cas_MW_mean=0;
     R_P=0;R_Q=0
     OP_init["TRB"][1]=maximum(sum(OP_init["PG"],dims=2))*0.0001
@@ -1466,18 +1448,18 @@ function SLA_RCAS(Glob,OP_init0,OP_NLP;BItermax=4)
     Risk_cascade=Glob["Risk_cascade"]
     Glob["obj_imp"]=false
     Glob["TR_before"]=[5.0,0.5]
-    # Cascade_Opt=false; Glob["Risk_cascade"]= false
-    # Glob["I_relax"]=1.1
     Cascade_Rep=Make_cascade_Rep(casreps_NLP,OP_NLP,LNS_cas_NLP,Rcas_NLP,R_OP_max0)
     Cascade_Rep=Add_Cascade_Rep!(casreps,LNS_cas,Glob,Cascade_Rep,Rcas0, R_OP_max0,Best_solution,mincost,minOptGap,iter,0,0,[[0 0] [0 0] [0 0] [0 0]])
+    FigCon2,FigCon=0,0
+    FigCon0=(Cas_risk_process_new(Glob, casreps,iter;reprow=Iter_Rep[end,:]))[2]
+    FigCons=Any[]
+    push!(FigCons, FigCon0)
     if Test_Sys in ["39bus/", "Nordic60/"]
-        Cascade_snapshots=[(make_cascade_risk_plot(Glob, casreps,iter;reprow=Iter_Rep[end,:]))[1]]
+        # Cascade_snapshots=[(make_cascade_risk_plot(Glob, casreps,iter;reprow=Iter_Rep[end,:]))[1]]
+        Cascade_snapshots=[plot_risk_new(Glob,FigCon0)]
     else
         Cascade_snapshots=[]
     end
-    # casreps[2,1]
-    # figtest=(make_cascade_stopping_stage_plot4(Glob, casreps,iter;reprow=Iter_Rep[end,:]))[1]
-    # save(Glob["Path"] * "../Result/test.png", figtest;dpi=4000,pxperunit=10)    # casreps[2,5]
     optstage=nothing
     optimal_tcs= nothing
     optimal_tcs1=nothing
@@ -1489,150 +1471,24 @@ function SLA_RCAS(Glob,OP_init0,OP_NLP;BItermax=4)
                 if Runcode[2]!=5
                     if Cascade_Opt
                         OP,out,model=Optimizer(Glob, Linearization_TYPE[Runcode[2]],deepcopy(OP_init),casreps,h_cas,comcas;optimal_tcs=optimal_tcs)
-                        try
-                            if maximum(value.(model[:pbd]))>9
-                                println("Problem identified")
-                                println("Maximum value of pbd: ", maximum(value.(model[:pbd])))
-                                println("Maximum index of pbd: ", model[:pbd].axes[1][findmax(value.(model[:pbd]).data)[2]])
-                            end
-                        catch
-                            nothing
-                        end
-
-                        # OP2,out2,model2= deepcopy(OP),deepcopy(out),model
-                        # value.(model[:pbd])
-                        # value.(model[:rcas_OP])
-                        # value(bin_cas)
-                        # bin_cas  = model[:bin_Cas]
-                        # indices  = getfield.(getfield.(keys(bin_cas), :I), 1)
-
-                        # value.(model[:pbd][(11,5)])
-                        # value(bin_cas[(11,5)])
-                        # value(model[:pbd][(1,1)])
-                        # value(model[:rcas_OP][(11,5)])
-                        # casreps[11,5]
-
-                        # Plots.plot(value.(model[:rcas_OP]).data)
-                        # model[:CNcascade_LP1][1]
-
-                        # findall(x-> x[end,"Sev"]>0.0, casreps)
-                        # Glob[""]
                         if Runcode[2]==3
-                            # fig_,optstage=make_cascade_stopping_stage_plot4(Glob, casreps, iter, model;reprow= XXmodel(Glob,OP_init,model))
-                            fig_,optstage=make_cascade_risk_plot(Glob, casreps, iter, model;reprow= XXmodel(Glob,OP_init,model))
+                            optstage,FigCon=Cas_risk_process_new(Glob, casreps, iter, model;reprow= XXmodel(Glob,OP_init,model))
+                            push!(FigCons, FigCon)
+                            # fig_,optstage=make_cascade_risk_plot(Glob, casreps, iter, model;reprow= XXmodel(Glob,OP_init,model))
                             if Test_Sys in ["39bus/","Nordic60/"]
+                                fig_= plot_risk_new(Glob,FigCon)
                                 push!(Cascade_snapshots, fig_)
                             end
                         end
-
-                        # findall(x-> x>0.0, value.(model[:slk_R_Limit]).data)
-                        # model[:slk_R_Limit].axes[1][137]
-                        # 12,22
-                        # value.(model[:pbd])[(6,2)]
-                        # value.(model[:pbd]).axes[1][26]
-                        # value.(model[:rcas_OP])[(12,22)]
-                        # value.(model[:slk_R_Limit])[(6,2)]
-
-                        # casreps[6,2]
-                        # value.(model[:cascade_penalty])
-                        # value.(model2[:cascade_penalty])
-                        # value(model[:bin_Cas][(18,4,1)])
-                        # model[:bin_Cas].keys
-
-                        # dictopt=Dict(zip(optstage[1],optstage[2]))
-                        # optstage[1][32]
-                        # optstage[2][32]
-                        # optstage[3]
-                        # casreps[12,5]
-                        # zip.(optstage[1],optstage[2])
-                        # Cascade_snapshots[3]
-                        # casreps[1,3]
-                        # println("Worst_slk_cascade:",value.(model[:Worst_slk_cas]))
-
-                        # findmax(value.(model[:ΔPinjP_c_Line]-model[:ΔPinjN_c_Line]))
-                        # findmin(value.(model[:ΔPinjP_c_Line]-model[:ΔPinjN_c_Line]))
-
-                        # OP,out,model=Optimizer(Glob, Linearization_TYPE[Runcode[2]],deepcopy(OP_init),nothing,h_cas)
-                        # model[:Vm_Cascade_expr]
-                        # value.(model[:CNcascade_LP1])
-                        # Plots.plot(model[:Vm_Cascade_expr])
-                        # Plots.plot!(model[:Vm_Cascade_expr] .+ value.(model[:diffOpt_expr]))
-                        # value.(model[:slk_cas])
-                        # model[:bin_Cas]
-                        # arr=value.(model[:bin_Cas])
-                        # idx_ones = findall(x -> x==1.0, arr.data)
-                        # (arr.axes)[1][idx_ones]
-                        # value.(model[:CNcascade_hist])
-                        # h_cas
-                      ##commented  # append!(cas_hist,setdiff(get_cascade_stage1_new(model[:CascadeInfo],Dict(zip(optstage[1],optstage[2]))),cas_hist))
-
-                        # append!(cas_hist,setdiff(get_cascade_stage1_new(model[:CascadeInfo]),cas_hist))
-
-                        # casreps[2,5]
-
-                        # cascade_info=model[:CascadeInfo]
-                        # fstage=findall(x-> x[3]==1,cascade_info["tcs_Cascade"][:,])
-                        # # cascade_info["tcs_Cascade"][fstage,1]
-                        # # i,j=last(enumerate(cascade_info["tcs_Cascade"][fstage,1]))
-                        # cashist=[(j[1], cascade_info["line_Cascade"][fstage,1][i], j[2]) for (i, j) in enumerate(cascade_info["tcs_Cascade"][fstage,1])]
-
-
-                        # diffOpt_expr
-                        # value.(model[:diffOpt_expr])
-
-                        # model[:CascadeInfo]["tcs_Cascade"]
-                        # h_cas1=deepcopy(h_cas)
-                        # h_cas
-                        # Plots.plot(h_cas1.Vio)
-                        # Plots.plot!(h_cas.Vio)
-                        # idx_f=findall(((t,c,s),) -> s==1, model[:CascadeInfo]["tcs_Cascade"][:,1])
-
-                        # (model[:Vm_Cascade_expr] .+ value.(model[:diffOpt_expr]))[idx_f]
-
-                        # (value.(model[:diffOpt_expr]))[idx_f]
-
-                        # value.(model[:hist_I]) 
-                        # IImax=(Glob["SysData"]["Line"]."RATE_A")[getindex.(h_cas.tup,2)]
-                        # opt_cal_hist=sqrt.((IImax.*h_cas.Vio).^2 .+ value.(model[:hist_I]))./IImax 
-                        # findmax(opt_cal_hist)
-                        # h_cas1
-
-                        # h_cas.Vio.-opt_cal_hist
                     else
                         OP,out,model=Optimizer(Glob, Linearization_TYPE[Runcode[2]],deepcopy(OP_init))
-                        # Plots.plot(value((model[:ΔPinjP_c_Line].+ model[:ΔPinjN_c_Line])[1,:,2]))
-                        # Plots.plot(value((model[:ΔQinjP_c_Line].+ model[:ΔQinjN_c_Line])[1,:,2]))
-                        
-                        # Plots.plot( OP["PG_c_Line"][1,:,2]-OP_init["PG_c_Line"][1,:,2])
-                        # Plots.plot!( OP_Valid["PG_c_Line"][1,:,2]-OP_init["PG_c_Line"][1,:,2])
-
-                        # Plots.plot( OP["QG_c_Line"][1,:,2]-OP_init["QG_c_Line"][1,:,2])
-                        # Plots.plot!( OP_Valid["QG_c_Line"][1,:,2]-OP_init["QG_c_Line"][1,:,2])
-                       
-
-                        # Plots.plot( OP["PG_c_Line"][1,:,2]-OP_init["PG_c_Line"][1,:,2])
-                        # Plots.plot( OP["QG_c_Line"][1,:,2]-OP_init["QG_c_Line"][1,:,2])
-                        
-                        # Plots.plot( OP_Valid["PG_c_Line"][1,:,2]-OP_init["PG_c_Line"][1,:,2])
-                        # Plots.plot( OP_Valid["QG_c_Line"][1,:,2]-OP_init["QG_c_Line"][1,:,2])
-
-                        # Plots.plot( OP["PG_c_Line"][1,:,2]-OP_Valid["PG_c_Line"][1,:,2])
-                        # Plots.plot( OP["QG_c_Line"][1,:,2]-OP_Valid["QG_c_Line"][1,:,2])
-
-
                     end
-                    # value.(model[:slack_Cascade_LP])
-                    # maximum(value.(model[:slack_Cascade_LP]))
+
                 elseif iter<2
                     OP,out,model=Optimizer(Glob, Linearization_TYPE[1],deepcopy(OP_init))
                 else
                     if Cascade_Opt
-                        # OP,out,model=Optimizer(Glob, Linearization_TYPE[3],deepcopy(OP_init),casreps,h_cas)
-                        # append!(cas_hist,setdiff(get_cascade_stage1_new(model[:CascadeInfo]),cas_hist))
                         OP,out,model=Optimizer(Glob, Linearization_TYPE[3],deepcopy(OP_init),casreps,h_cas,comcas;optimal_tcs=optimal_tcs)
-                        # fig_,optstage=make_cascade_stopping_stage_plot4(Glob, casreps, iter, model;reprow= XXmodel(Glob,OP_init,model))
-                        # push!(Cascade_snapshots, fig_)
-                        # append!(cas_hist,setdiff(get_cascade_stage1_new(model[:CascadeInfo],Dict(zip(optstage[1],optstage[2]))),cas_hist))
                         fig_,optstage=make_cascade_risk_plot(Glob, casreps, iter, model;reprow= XXmodel(Glob,OP_init,model))
                         if Test_Sys in ["39bus/","Nordic60/"]
                             push!(Cascade_snapshots, fig_)
@@ -1642,44 +1498,12 @@ function SLA_RCAS(Glob,OP_init0,OP_NLP;BItermax=4)
                     end
                 end
 
-                # println("slk_normal:",value.(model[:slk_Norm]))
-                # println("slk_cont:",value.(model[:slk_Cont]))
-
-                # maximum(value.(model[:ΔPinjP]))
-                # maximum(value.(model[:ΔPinjN]))
-                # maximum(value.(model[:ΔQinjP]))
-                # maximum(value.(model[:ΔQinjN]))
-                # OP["TR"]
                 OP["Pshed"]=max.(0,OP["Pshed"])
                 OP["Pcurt"]=max.(0,OP["Pcurt"])
                 OP["Pcurtc"]=max.(0,OP["Pcurtc"])
                 OP["Pshed_c_Line"]=max.(0,OP["Pshed_c_Line"])
                 OP["Pcurt_c_Line"]=max.(0,OP["Pcurt_c_Line"])
                 OP["Pcurtc_c_Line"]=max.(0,OP["Pcurtc_c_Line"])
-
-                # minimum(OP["Pshed"])
-                # findmax(OP["V_c_Line"])
-                # OP["V_c_Line"][7,20,31]
-
-                # model[:ΔPinjP_c_Line][14,:,9]
-                # OP_init["PG_c_Line"][14,11,9]
-                # OP_init["QG_c_Line"][14,11,9]
-                # OP["PG_c_Line"][14,11,9]
-                # OP["QG_c_Line"][14,11,9]
-
-                # findmin(OP["V_c_Line"])
-                # value.(model[:CV2magexporg][10,14,21])
-                # OP_init["V_c_Line"][8,43,12]
-
-                # OP_Valid["V_c_Line"][7,50,31]
-                # OP_init["V_c_Line"][7,50,31]
-                # OP_NLP["V_c_Line"][7,50,31]
-                # OP_Valid["V_c_Line"][7,20,31]
-                # OP_init["V_c_Line"][7,20,31]
-
-                # OP["V_c_Line"][15,14,20]
-
-
 
                 if Linearization_TYPE[Runcode[2]]=="SENS"|| (Linearization_TYPE[Runcode[2]]=="Hybrid" && iter>1)
                     print( DataFrame(
@@ -1726,8 +1550,11 @@ function SLA_RCAS(Glob,OP_init0,OP_NLP;BItermax=4)
                         println("slk_cont_Q:",value.(model[:slk_Cont1]))
                         if Cascade_Opt
                             if Glob["Risk_cascade"]== "RSS"
+                                println("slk_cas_r:",maximum( value.(model[:slk_cas_r]);init=0.0))
                                 println("slk_R_Sys:",value.(model[:slk_R_Sys]))
                                 println("slk_R_OP:",maximum( value.(model[:slk_R_OP]);init=0.0))
+                                println("R_Sys:",value.(model[:Rcas_sys]))
+                                println("R_OP:",maximum( value.(model[:rcas_OP]);init=0.0))
                             end
                             println("slk_cascade_LP:",value.(model[:cascade_penalty]))
                             try
@@ -1736,42 +1563,8 @@ function SLA_RCAS(Glob,OP_init0,OP_NLP;BItermax=4)
                                 println("Worst_slk_cascade: Not defined")
                             end
                         end
-
-                    # value.(model[:slk_cas])
-                    # value.(model[:cascade_penalty])
-                    # value.(model[ob])
-                    # objective_value(model)
-                    # value.(model[:slk_Vmax_c])
-                    # println("slk_normal:",value.(model[:slk_Norm]))
-                    # println("slk_cont:",value.(model[:slk_Cont]))
-                    # model[:slkDataFrame]["slkVmax_c"][557]
-                    # CartesianIndex(10,14,21) in model[:slkDataFrame]["slkVmax_c"]
-                    # value.(model[:slk_Imax_c])
-                    # Glob["SysData"]["Bus"][14,5:6].=[1.1,0.9]
-                    # model[:CV2magexporg][7,50,31]
-                    # value.(model[:slk_Cont])
-                    # findmax(value.(model[:slk_Vmax_c]))
-                    # value.(model[:slk_Vmin_c])[63]
-                    # model[:I_c_Line][24,3,6]
-                    # model[:Line_flow_c_Line][24,3,6]
-
-
-                    # xxx=sort(value.(model[:slk_Vmax_c]))
-                    # Plots.plot(xxx)
-                    # xxx=findall(x-> x>0.5, value.(model[:slk_Vmax_c]))
-                    # model[:W_VIO]
-                    # OP["acc"]
-
                     else Contingency_infeasibility=0 end
                     println(Contingency_infeasibility)
-                    # if Problem_Type in ["SCOPF", "RBOPF"] t_infes=Normal_infeasibility+Contingency_infeasibility else t_infes=Normal_infeasibility end
-                    # if t_infes<1e-6
-                    # @info "Restoration is compeleted!";global relaxpermit=true;
-                    # end
-
-                    # if max(value.(model[:slk_Norm]),value.(model[:slk_Cont]))<=0.001
-                    #     freeV=0
-                    # end
                 end
                 break
             else @warn "Optimizer is not converged"; @error "termination status: $(termination_status(model))"; end
@@ -1780,26 +1573,6 @@ function SLA_RCAS(Glob,OP_init0,OP_NLP;BItermax=4)
             Ncost,Vio_Sum_N,Vio_general_N,AVG_C_cost,Vio_Sum_C,OP_Valid,Vio_general_C,casreps2,h_cas2,comcas2=AC_PFCheck(OP,Glob,cas_hist)
             LNS_cas,LNSs=LNS_cal(casreps2)
             Rcas, R_OP_max = Rcas_cal(casreps2)
-
-            # casreps2[2,5]
-            # LNSs=[casreps[t,i][end,"LNS_T"] for t in 1:nTL, i in 1:size(Glob["SysData"]["ConL"],1)]
-            # findall(x-> size(x,1)>1, casreps)
-            # (13,12,4) in cas_hist
-            # casreps[12,18]
-            # IIIindex=findall(x-> x==(13,4,1), model[:CascadeInfo]["tcs_Cascade"])
-            # IIImodel= sqrt.((model[:Vm_Cascade_expr]).^2 .+ (value.(model[:diffOpt_expr]))./IIImax)[IIIindex]
-            # model[:Vm_Cascade_expr]
-            # model[:diffVm_expr]
-            # value.(model[:diffOpt_expr])
-            # IIImax=(Glob["SysData"]["Line"]."RATE_A")[ model[:CascadeInfo]["line_Cascade"]].^2
-            # value.(model[:bin_Cas])
-            
-            # model[:CNcascade_LP1]
-            # OP["Pshed"][:,1872]
-            # Vio_general_C[1,18]
-            # Vio_general_C[6,26]."abs"
-            # Vio_general_N[14,1]
-            # Vio_general_C[19,10]
 
             GC.gc()
             cost= Ncost.+(AVG_C_cost.-Ncost)*Glob["conprob_"]
@@ -1825,26 +1598,27 @@ function SLA_RCAS(Glob,OP_init0,OP_NLP;BItermax=4)
 
             Cascade_Rep=Add_Cascade_Rep!(casreps2,LNS_cas,Glob,Cascade_Rep,Rcas, R_OP_max,OP_Valid,sum(cost),OptGap,iter,sol_time,res_time)
             display(Cascade_Rep)
-            if Test_Sys in ["39bus/","Nordic60/"]
-                push!(Cascade_snapshots, (make_cascade_risk_plot(Glob, casreps2,iter;reprow=Iter_Rep[end,:],optstage=optstage,h_cas=h_cas))[1])
-            end
 
-            if Cascade_Opt && ( Runcode[2]==3 || (Runcode[2]==5 && iter>1))
-                optimal_tcs1,contind=opt_tcs(optstage,casreps2)
-            else
-                contind=1
+            FigCon2= Cas_risk_process_new(Glob, casreps2,iter;reprow=Iter_Rep[end,:],optstage=optstage,h_cas=h_cas)[2]
+            push!(FigCons, FigCon2)
+            if Test_Sys in ["39bus/","Nordic60/"]
+                push!(Cascade_snapshots,plot_risk_new(Glob,FigCon2))
+                # push!(Cascade_snapshots, (make_cascade_risk_plot(Glob, casreps2,iter;reprow=Iter_Rep[end,:],optstage=optstage,h_cas=h_cas))[1])
             end
-            if Glob["Risk_cascade"]== "RSS" && Cascade_Opt
-                if Rcas[3]<= Glob["R_Sys_max"] && R_OP_max[3]<= Glob["R_OP_max"]
-                    contind=0
+            if Glob["Risk_cascade"]!= "false"
+                if Cascade_Opt && ( Runcode[2]==3 || (Runcode[2]==5 && iter>1))
+                    optimal_tcs1,contind=opt_tcs(optstage,casreps2)
                 else
                     contind=1
                 end
+                if Glob["Risk_cascade"]== "RSS" && Cascade_Opt
+                    if Rcas[3]<= Glob["R_Sys_max"] && R_OP_max[3]<= Glob["R_OP_max"]
+                        contind=0
+                    else
+                        contind=1
+                    end
+                end
             end
-            # optstage[3][32]
-            # optstage[1]
-            # optstage[2]
-            # Cascade_snapshots[end]
 
             Cas_MW_max= Cascade_Rep[end,"Worst_Cas_MW"]
             Cas_MW_mean= Cascade_Rep[end,"Mean_Cas_MW"]
@@ -1853,24 +1627,7 @@ function SLA_RCAS(Glob,OP_init0,OP_NLP;BItermax=4)
             if Iter_Rep[end-1,"OptGap"]-Iter_Rep[end,"OptGap"]<=0.01 && (Runcode[2]==3 || (Runcode[2]==5 && iter>1))
                 Glob["obj_imp"]=false
             end
-            # findmax(OP["V_c_Line"].-(Glob["SysData"]["Bus"]."V_max (pu)")')
-            # OP["V_c_Line"][1,43,10]-(Glob["SysData"]["Bus"]."V_max (pu)")[43]
-            # value.(model[:CV2magexporg][18,41,1])
-            # model[:I_c_Line][22,46,30]
-            # value.(model[:Line_flow_c_Line][7,30,18])
-            # model[:Line_flow][14,1]
-            # model[:I_cal_c_Line][7,30,18]
-            # print(model[:Line_flow_c_Line][22,46,30])
-                            # aa= calculate_I_sol( model[:e_c_Line],model[:f_c_Line],raw)
-                            # aa[22,46,30]
-                            # model
-                            # OP_Valid["V_c_Line"][22,:,30]
-                            # OP["V_c_Line"][22,:,30]
 
-            # raw["QActBus"]
-            # Glob["SysData"]["Line"]."RATE_A"[57].^2
-            # maximum(-OP["V"].+(Glob["SysData"]["Bus"]."V_min (pu)")')
-            # casreps2[8,4]
         catch e
             # rethrow(e)
             @error "PF not converged"
@@ -1928,11 +1685,11 @@ function SLA_RCAS(Glob,OP_init0,OP_NLP;BItermax=4)
         end
 
         if !Cascade_Opt
-        Stopdec= max(min_infmax_N,min_infmax_C)<1e-4
+            Stopdec= max(min_infmax_N,min_infmax_C)<1e-4
         elseif  Glob["Risk_cascade"]== "false"
             Stopdec= (max(Maxvio_N,Maxvio_C)<1e-4 && (contind==0 || Cascade_Rep[end,"CasNum"]==0))
         elseif  Glob["Risk_cascade"]== "RSS"
-            Stopdec= true || (max(Maxvio_N,Maxvio_C)<1e-4 && (contind==0 || Cascade_Rep[end,"CasNum"]==0))
+            Stopdec= true && (max(Maxvio_N,Maxvio_C)<1e-4 && (contind==0 || Cascade_Rep[end,"CasNum"]==0))
         end
         if Stopdec
             @info "Violations are removed"
@@ -1961,5 +1718,5 @@ function SLA_RCAS(Glob,OP_init0,OP_NLP;BItermax=4)
         # end
         # ods_write(Path*"../Result/Iter_Report/"*Problem_Type*string(Runcode),Dict(("General",1,1)=>Iter_Rep))
     end
-    return mincost,Best_solution,Best_Iter,min_infmax_N,min_infmax_C,minOptGap,Best_vio_general_N,Best_vio_sum_N,Best_vio_general_C,Best_vio_sum_C,Best_sol_time,Best_res_time,Best_Cas_MW, Best_Cas_MW_mean,Cascade_snapshots
+    return mincost,Best_solution,Best_Iter,min_infmax_N,min_infmax_C,minOptGap,Best_vio_general_N,Best_vio_sum_N,Best_vio_general_C,Best_vio_sum_C,Best_sol_time,Best_res_time,Best_Cas_MW, Best_Cas_MW_mean,Cascade_snapshots, FigCons
 end

@@ -1,0 +1,13 @@
+ coef1=Lininit["obj"]*0.001;coef2= Lininit["obj"]*0.001;coef3=Lininit["obj"]*0.01
+ 
+ coef4=0
+ 
+ 
+ 
+   Pcoef=filter_to_sparse_V_3(SENSDict["S_IP"][t,c][lines,:],0.0001,[TR1, TR1])#
+   Qcoef=filter_to_sparse_V_3(SENSDict["S_IQ"][t,c][lines,:],0.0001,[TR2, TR2])
+ 
+   Pcoef_V=filter_to_sparse_V_3(SENSDict["S_VP"][t,c][elems,:],0.0001,[TR1,TR1])
+   Qcoef_V=filter_to_sparse_V_3(SENSDict["S_VQ"][t,c][elems,:],0.0001,[TR2,TR2]) 
+   
+   

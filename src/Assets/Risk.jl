@@ -11,6 +11,16 @@ function SEVF_casreps(casrep;stage=nothing)
     return SEVF(LNS, GT, RC, BT)
 end
 
+function ESEV_casrep(casrep;sbegin=1)
+    p=casrep[1, "prob"]
+    si=size(casrep,1)
+    Sev_end=casrep[max(1,sbegin-1), "Sev"]
+    if si>sbegin
+        Sev_end = sum(prod(casrep[sbegin:k-1, "prob"]; init=1.0) * (1 - casrep[k, "prob"]) * casrep[k, "Sev"] for k in sbegin:si)
+    end
+    return Sev_end
+end
+
 function probdist(VMs; min=Glob["I_relax"], max=Glob["I_relaxmax"])
     mVM=maximum(VMs,init=0)
     if mVM<min
@@ -41,19 +51,13 @@ end
 
 function Esev_cal(casrep)
     p=casrep[1, "prob"]
-    r= p*casrep[end,"Sev"]+ (1-p) *casrep[1,"Sev"]
+    Sev_end=ESEV_casrep(casrep;sbegin=2)
+    r= p*Sev_end+ (1-p) *casrep[1,"Sev"]
     return r
 end
 
 function Esev_cal_exact(casrep)
-    si=size(casrep,1)
-    prob=1 .-casrep[:, "prob"]
-    for i in 1:si
-        for j=1:i-1
-            prob[i]*= casrep[j,"prob"]
-        end
-    end
-    r= sum(prob.*casrep[:,"Sev"])
+    r= ESEV_casrep(casrep;sbegin=1)
     return r
 end
 

@@ -2470,8 +2470,6 @@ function Sensitivity_constraints(Glob, LSCOPF,CascadeInfo,N_Var,C_Var,OPFon,raw,
     # @time TR,Indices,acc,Injlimit,Worst_Vio=Set_TR_new2(Base_TR_N,Base_TR_C,SENSDict_All,I2_0,V_0,raw,PBound,QBound,;cl=cl)
     TR,Indices,acc,Injlimit,Worst_Vio=Set_TR_new2(Glob, nTP,Base_TR_N,Base_TR_C,SENSDict_All,I2_0,V_0,raw,PBound,QBound,CascadeInfo;cl=cl)
 
-
-
     # TR=[1,0.2]
     # acc=0.0
     # Indices[2][4:end]
